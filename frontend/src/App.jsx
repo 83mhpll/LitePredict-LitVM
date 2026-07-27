@@ -474,6 +474,34 @@ export default function App() {
         </div>
 
         <div className="topbar-right">
+          {/* Faucet button - always visible */}
+          <a
+            href="https://liteforge.hub.caldera.xyz"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-ghost"
+            style={{display:"flex",alignItems:"center",gap:5,color:"var(--bull)",border:"1px solid var(--bull-border)",textDecoration:"none",fontSize:12}}
+            title="Get free testnet zkLTC"
+          >
+            <span>🚰</span>
+            <span>Faucet</span>
+          </a>
+
+          {/* Builders program */}
+          <a
+            href="https://builders.litvm.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-ghost"
+            style={{display:"flex",alignItems:"center",gap:5,color:"#a78bfa",border:"1px solid rgba(139,92,246,0.25)",textDecoration:"none",fontSize:12}}
+            title="Apply to LitVM Builders Program"
+          >
+            <span>⚡</span>
+            <span>Builders</span>
+          </a>
+
+          <div className="topbar-divider" />
+
           {account ? (
             chainId !== LITVM_CHAIN_ID ? (
               <button className="btn btn-secondary" onClick={switchNetwork}>Switch to LitVM</button>
