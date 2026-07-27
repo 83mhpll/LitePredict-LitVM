@@ -21,7 +21,7 @@ const DIA_ORACLE_ABI = [
   "function latestRoundData() external view returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)"
 ];
 
-const LITE_PREDICT_DEFAULT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3"; // Default local anvil deploy address
+const LITE_PREDICT_DEFAULT_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"; // Default local anvil deploy address
 const DIA_LTC_USD_ADDRESS = "0x45dDa5d881BD2C917976CCfde74fFd6f6412da29"; // LitVM Testnet DIA LTC/USD Adapter
 
 const LITVM_RPC_URL = "https://liteforge.rpc.caldera.xyz/http";
