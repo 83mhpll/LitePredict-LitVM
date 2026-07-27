@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { ethers } from "ethers";
-import { createChart, ColorType, CrosshairMode } from "lightweight-charts";
+import { createChart, ColorType, CrosshairMode, CandlestickSeries } from "lightweight-charts";
 
 /* ── Contract Config ── */
 const LITE_PREDICT_ABI = [
@@ -83,14 +83,15 @@ const generateOrderbook = (midPrice) => {
 const genCandles = (basePrice = 85) => {
   const candles = [];
   let price = basePrice;
-  const now = Math.floor(Date.now() / 1000);
-  for (let i = 60; i >= 0; i--) {
+  const now = Math.floor(Date.now() / 10000) * 10; // align to 10s boundary
+  for (let i = 180; i >= 0; i--) {
+    const barTime = now - i * 10;
     const open = price;
-    const change = (Math.random() - 0.48) * 0.5;
+    const change = (Math.random() - 0.48) * 0.15;
     const close = +(open + change).toFixed(4);
-    const high = +(Math.max(open, close) + Math.random() * 0.2).toFixed(4);
-    const low = +(Math.min(open, close) - Math.random() * 0.2).toFixed(4);
-    candles.push({ time: now - i * 60, open: +open.toFixed(4), high, low, close });
+    const high = +(Math.max(open, close) + Math.random() * 0.12).toFixed(4);
+    const low = +(Math.min(open, close) - Math.random() * 0.12).toFixed(4);
+    candles.push({ time: barTime, open: +open.toFixed(4), high, low, close });
     price = close;
   }
   return candles;
@@ -170,7 +171,7 @@ export default function App() {
       height: chartContainerRef.current.offsetHeight,
     });
 
-    const series = chart.addCandlestickSeries({
+    const series = chart.addSeries(CandlestickSeries, {
       upColor: "#22c55e", downColor: "#ef4444",
       borderUpColor: "#22c55e", borderDownColor: "#ef4444",
       wickUpColor: "#22c55e", wickDownColor: "#ef4444",
@@ -199,21 +200,36 @@ export default function App() {
         if (newP > prev) setPriceDir("up");
         else if (newP < prev) setPriceDir("down");
         else setPriceDir("same");
-        prevPriceRef.current = prev;
+        prevPriceRef.current = newP;
 
-        // Push new candle tick
+        // Update current candle bar (floor to 10s to group ticks)
         if (candleSeriesRef.current) {
-          const now = Math.floor(Date.now() / 1000);
+          const barTime = Math.floor(Date.now() / 10000) * 10; // 10-second bars
           const last = candlesDataRef.current[candlesDataRef.current.length - 1];
-          const open = last?.close || newP;
-          const newCandle = {
-            time: now,
-            open: open,
-            high: Math.max(open, newP) + Math.random() * 0.05,
-            low: Math.min(open, newP) - Math.random() * 0.05,
-            close: newP
-          };
-          try { candleSeriesRef.current.update(newCandle); } catch (_) {}
+          if (last && last.time === barTime) {
+            // Update existing bar
+            const updated = {
+              time: barTime,
+              open: last.open,
+              high: Math.max(last.high, newP),
+              low: Math.min(last.low, newP),
+              close: newP
+            };
+            candlesDataRef.current[candlesDataRef.current.length - 1] = updated;
+            try { candleSeriesRef.current.update(updated); } catch (_) {}
+          } else {
+            // New bar
+            const open = last ? last.close : newP;
+            const newBar = {
+              time: barTime,
+              open,
+              high: Math.max(open, newP),
+              low: Math.min(open, newP),
+              close: newP
+            };
+            candlesDataRef.current = [...candlesDataRef.current, newBar];
+            try { candleSeriesRef.current.update(newBar); } catch (_) {}
+          }
         }
         return newP;
       });
