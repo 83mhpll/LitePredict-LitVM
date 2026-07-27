@@ -1,0 +1,14 @@
+# Foundry / Solidity
+out/
+cache/
+lib/
+.env
+
+# Node / Frontend
+node_modules/
+dist/
+.DS_Store
+frontend/node_modules/
+frontend/dist/
+frontend/.eslintcache
+frontend/src/assets/

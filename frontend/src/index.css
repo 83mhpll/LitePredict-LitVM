@@ -1,0 +1,524 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg-dark: #0b0e14;
+  --bg-card: rgba(20, 26, 38, 0.65);
+  --border-glow: rgba(124, 77, 255, 0.25);
+  --bull-green: #00e676;
+  --bull-glow: rgba(0, 230, 118, 0.3);
+  --bear-red: #ff1744;
+  --bear-glow: rgba(255, 23, 68, 0.3);
+  --text-primary: #f5f6fa;
+  --text-secondary: #8f9cae;
+  --accent: #7c4dff;
+  --accent-glow: rgba(124, 77, 255, 0.5);
+  --glass-gradient: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: 'Outfit', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: var(--bg-dark);
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(124, 77, 255, 0.15) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(0, 230, 118, 0.08) 0px, transparent 50%),
+    radial-gradient(at 50% 100%, rgba(255, 23, 68, 0.08) 0px, transparent 50%);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Glassmorphic Layout Components */
+.app-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* Header */
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 25px;
+  background: var(--bg-card);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-glow);
+  border-radius: 16px;
+  margin-bottom: 30px;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+}
+
+.brand-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo-badge {
+  background: linear-gradient(135deg, var(--accent) 0%, #a883ff 100%);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: 0.5px;
+  box-shadow: 0 0 15px var(--accent-glow);
+}
+
+.brand-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  background: linear-gradient(90deg, #ffffff 0%, var(--text-secondary) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.price-ticker {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 1.1rem;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.price-value {
+  color: var(--bull-green);
+  font-weight: 600;
+  transition: color 0.3s ease;
+}
+
+.price-value.down {
+  color: var(--bear-red);
+}
+
+/* Buttons */
+.btn {
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: none;
+  outline: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 15px rgba(124, 77, 255, 0.3);
+}
+
+.btn-primary:hover {
+  background: #622eff;
+  box-shadow: 0 6px 20px rgba(124, 77, 255, 0.45);
+  transform: translateY(-1px);
+}
+
+.btn-outline {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+}
+
+.btn-outline:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Prediction Cards Area */
+.rounds-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 25px;
+  margin-bottom: 40px;
+}
+
+.round-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-glow);
+  border-radius: 20px;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+}
+
+.round-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(124, 77, 255, 0.4);
+}
+
+.round-card.live-round {
+  border: 1px solid rgba(124, 77, 255, 0.5);
+  box-shadow: 0 0 25px rgba(124, 77, 255, 0.15), 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+}
+
+.card-header {
+  padding: 16px 20px;
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.epoch-badge {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.round-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+}
+
+.live-round .status-dot {
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+  animation: pulse 1.5s infinite;
+}
+
+.next-round .status-dot {
+  background: var(--bull-green);
+}
+
+/* Card Content / Panels */
+.card-content {
+  padding: 20px;
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.pool-bar-container {
+  margin: 15px 0;
+}
+
+.ratio-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.ratio-bar {
+  height: 8px;
+  background: var(--bear-red);
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+}
+
+.bull-progress {
+  height: 100%;
+  background: var(--bull-green);
+  transition: width 0.4s ease;
+}
+
+/* Position Options */
+.multiplier-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  margin: 10px 0;
+}
+
+.multiplier-pill.bull-pill {
+  border-color: rgba(0, 230, 118, 0.15);
+  background: rgba(0, 230, 118, 0.02);
+}
+
+.multiplier-pill.bear-pill {
+  border-color: rgba(255, 23, 68, 0.15);
+  background: rgba(255, 23, 68, 0.02);
+}
+
+.pill-title {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.pill-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.bull-pill .pill-value { color: var(--bull-green); }
+.bear-pill .pill-value { color: var(--bear-red); }
+
+/* Price comparisons inside Card */
+.price-comparison-box {
+  margin-top: auto;
+  background: rgba(255, 255, 255, 0.01);
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.comp-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+}
+
+.comp-label {
+  color: var(--text-secondary);
+}
+
+.comp-val {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 500;
+}
+
+/* Form inputs for betting */
+.bet-form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-top: 15px;
+}
+
+.bet-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.bet-input {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-glow);
+  padding: 12px 16px;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 1.1rem;
+  font-family: 'IBM Plex Mono', monospace;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.bet-input:focus {
+  border-color: var(--accent);
+}
+
+.token-suffix {
+  position: absolute;
+  right: 15px;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.btn-bull-bet {
+  background: var(--bull-green);
+  color: #0b0e14;
+  width: 100%;
+  justify-content: center;
+}
+
+.btn-bull-bet:hover {
+  background: #00ff88;
+  box-shadow: 0 0 20px var(--bull-glow);
+}
+
+.btn-bear-bet {
+  background: var(--bear-red);
+  color: #fff;
+  width: 100%;
+  justify-content: center;
+}
+
+.btn-bear-bet:hover {
+  background: #ff4d6a;
+  box-shadow: 0 0 20px var(--bear-glow);
+}
+
+/* User Dashboard Area */
+.dashboard-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-glow);
+  border-radius: 20px;
+  padding: 25px;
+  margin-bottom: 40px;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+}
+
+.dashboard-title {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dashboard-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  margin-bottom: 25px;
+}
+
+.stat-item {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  padding: 16px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.claimable-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 15px;
+}
+
+.claimable-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 12px 20px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.claimable-info {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.side-indicator {
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.side-indicator.bull {
+  background: rgba(0, 230, 118, 0.15);
+  color: var(--bull-green);
+}
+
+.side-indicator.bear {
+  background: rgba(255, 23, 68, 0.15);
+  color: var(--bear-red);
+}
+
+/* Faucet Banner */
+.faucet-banner {
+  background: linear-gradient(90deg, rgba(124, 77, 255, 0.1) 0%, rgba(0, 230, 118, 0.05) 100%);
+  border: 1px solid rgba(124, 77, 255, 0.2);
+  border-radius: 16px;
+  padding: 20px 25px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.faucet-text h3 {
+  font-size: 1.1rem;
+  margin-bottom: 4px;
+}
+
+.faucet-text p {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+/* Keepers banner */
+.keeper-box {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed var(--border-glow);
+  padding: 15px;
+  border-radius: 12px;
+  margin-top: 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+/* Keyframe animations */
+@keyframes pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(124, 77, 255, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 8px rgba(124, 77, 255, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(124, 77, 255, 0);
+  }
+}
+
+/* Responsive fixes */
+@media (max-width: 768px) {
+  .app-header {
+    flex-direction: column;
+    gap: 15px;
+    align-items: stretch;
+  }
+  .price-ticker {
+    justify-content: center;
+  }
+  .faucet-banner {
+    flex-direction: column;
+    gap: 15px;
+    text-align: center;
+  }
+}
