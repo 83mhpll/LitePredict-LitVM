@@ -12,3 +12,4 @@ frontend/node_modules/
 frontend/dist/
 frontend/.eslintcache
 frontend/src/assets/
+.env.local

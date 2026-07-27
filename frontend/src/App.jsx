@@ -481,23 +481,10 @@ export default function App() {
             rel="noopener noreferrer"
             className="btn btn-ghost"
             style={{display:"flex",alignItems:"center",gap:5,color:"var(--bull)",border:"1px solid var(--bull-border)",textDecoration:"none",fontSize:12}}
-            title="Get free testnet zkLTC"
+            title="Get free testnet zkLTC from LitVM faucet"
           >
             <span>🚰</span>
-            <span>Faucet</span>
-          </a>
-
-          {/* Builders program */}
-          <a
-            href="https://builders.litvm.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn btn-ghost"
-            style={{display:"flex",alignItems:"center",gap:5,color:"#a78bfa",border:"1px solid rgba(139,92,246,0.25)",textDecoration:"none",fontSize:12}}
-            title="Apply to LitVM Builders Program"
-          >
-            <span>⚡</span>
-            <span>Builders</span>
+            <span>Get zkLTC</span>
           </a>
 
           <div className="topbar-divider" />
