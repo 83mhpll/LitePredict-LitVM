@@ -23,7 +23,7 @@ const DIA_ORACLE_ABI = [
   "function latestRoundData() external view returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)"
 ];
 
-const DEFAULT_CONTRACT = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
+const DEFAULT_CONTRACT = "0x32dDD87325e9fF3D522490ddb7c79F4c23744B01";
 const DIA_LTC_USD = "0x45dDa5d881BD2C917976CCfde74fFd6f6412da29";
 const LITVM_RPC = "https://liteforge.rpc.caldera.xyz/http";
 const LITVM_CHAIN_ID = 4441;
