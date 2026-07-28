@@ -234,7 +234,7 @@ export default function App() {
   const [orderbook, setOrderbook] = useState(() => generateOrderbook(85));
 
   /* ── Trade form ── */
-  const [tradeSide, setTradeSide] = useState("Bull");
+  const [tradeSide, setTradeSide] = useState("YES");
   const [tradeType, setTradeType] = useState("Market");
   const [tradeQty, setTradeQty] = useState(settings.defaultBetAmount);
   const [limitPrice, setLimitPrice] = useState("");
@@ -416,7 +416,7 @@ export default function App() {
     ro.observe(chartContainerRef.current);
 
     return () => { ro.disconnect(); chart.remove(); };
-  }, [settings.isDarkTheme]);
+  }, [settings.isDarkTheme, viewMode]);
 
   const fetchBinanceKlines = async () => {
     try {
@@ -731,7 +731,8 @@ export default function App() {
 
   /* ═══ Place Bet ═══ */
   const placeBet = async () => {
-    if (isPaperMode) { logPaperTrade(tradeSide, tradeQty); return; }
+    const onChainSide = (tradeSide === "YES" || tradeSide === "Bull") ? "Bull" : "Bear";
+    if (isPaperMode) { logPaperTrade(onChainSide, tradeQty); return; }
     if (!signer) { toast("Connect wallet first", "error"); return; }
     if (chainId !== LITVM_CHAIN_ID) { toast("Switch to LitVM network", "error"); return; }
     if (!tradeQty || parseFloat(tradeQty) <= 0) { toast("Enter valid amount", "error"); return; }
@@ -740,10 +741,10 @@ export default function App() {
     try {
       const c = new ethers.Contract(settings.contractAddr, LITE_PREDICT_ABI, signer);
       const val = ethers.parseEther(tradeQty);
-      const tx = tradeSide === "Bull" ? await c.betBull(currentEpoch, { value: val }) : await c.betBear(currentEpoch, { value: val });
-      toast(`${tradeSide} order submitted…`, "info");
+      const tx = onChainSide === "Bull" ? await c.betBull(currentEpoch, { value: val }) : await c.betBear(currentEpoch, { value: val });
+      toast(`${onChainSide} order submitted…`, "info");
       await tx.wait();
-      toast(`${tradeSide} position entered! Round #${currentEpoch}`, "success");
+      toast(`${onChainSide} position entered! Round #${currentEpoch}`, "success");
       setTradeQty(settings.defaultBetAmount);
       await loadData();
     } catch(e) { toast(e.reason || "Transaction failed", "error"); }
@@ -974,10 +975,11 @@ export default function App() {
     if (!tradeQty || !biddingRound) return { payout: "0.00", mult: "0.00", impact: "0.0" };
     const qty = parseFloat(tradeQty);
     const total = parseFloat(biddingRound.totalAmount) + qty;
-    const pool = (tradeSide==="Bull" ? parseFloat(biddingRound.bullAmount) : parseFloat(biddingRound.bearAmount)) + qty;
+    const isBull = tradeSide === "Bull" || tradeSide === "YES";
+    const pool = (isBull ? parseFloat(biddingRound.bullAmount) : parseFloat(biddingRound.bearAmount)) + qty;
     if (pool === 0) return { payout: "0.00", mult: "0.00", impact: "0.0" };
     const mult = (total * 0.98) / pool;
-    const origPool = tradeSide==="Bull" ? parseFloat(biddingRound.bullAmount) : parseFloat(biddingRound.bearAmount);
+    const origPool = isBull ? parseFloat(biddingRound.bullAmount) : parseFloat(biddingRound.bearAmount);
     const origTotal = parseFloat(biddingRound.totalAmount);
     const origMult = origPool > 0 ? (origTotal * 0.98) / origPool : mult;
     const impact = origMult > 0 ? ((origMult - mult) / origMult * 100).toFixed(1) : "0.0";
@@ -1274,8 +1276,8 @@ export default function App() {
             </div>
             {contextModalRound.epoch === currentEpoch && (
               <div style={{display:'flex', gap:8, marginTop: 16}}>
-                <button className="trade-btn bull" onClick={() => { setActivePrediction({ epoch: currentEpoch, side: 'Bull', pool: getMult(contextModalRound, 'Bull') }); setActiveTab('slip'); setContextModalRound(null); }}>Trade Bull</button>
-                <button className="trade-btn bear" onClick={() => { setActivePrediction({ epoch: currentEpoch, side: 'Bear', pool: getMult(contextModalRound, 'Bear') }); setActiveTab('slip'); setContextModalRound(null); }}>Trade Bear</button>
+                <button className="trade-btn bull" onClick={() => { setTradeSide('YES'); setActivePrediction({ epoch: currentEpoch, side: 'YES', pool: getMult(contextModalRound, 'Bull') }); setActiveTab('slip'); setContextModalRound(null); }}>Trade YES</button>
+                <button className="trade-btn bear" onClick={() => { setTradeSide('NO'); setActivePrediction({ epoch: currentEpoch, side: 'NO', pool: getMult(contextModalRound, 'Bear') }); setActiveTab('slip'); setContextModalRound(null); }}>Trade NO</button>
               </div>
             )}
           </div>
@@ -1292,7 +1294,7 @@ export default function App() {
               Opportunity Score: <b>{hcAlert.score}</b> (Threshold: {settings.alertThreshold})
             </p>
             <div style={{display:'flex', gap:8}}>
-              <button className={`trade-btn ${hcAlert.edge.toLowerCase()}`} onClick={() => { setActivePrediction({ epoch: hcAlert.epoch, side: hcAlert.edge, pool: hcAlert.edge === 'Bull' ? getMult(rounds[hcAlert.epoch], 'Bull') : getMult(rounds[hcAlert.epoch], 'Bear') }); setActiveTab('slip'); setHcAlert(null); }}>
+              <button className={`trade-btn ${hcAlert.edge.toLowerCase()}`} onClick={() => { const s = hcAlert.edge === 'Bull' ? 'YES' : 'NO'; setTradeSide(s); setActivePrediction({ epoch: hcAlert.epoch, side: s, pool: hcAlert.edge === 'Bull' ? getMult(rounds[hcAlert.epoch], 'Bull') : getMult(rounds[hcAlert.epoch], 'Bear') }); setActiveTab('slip'); setHcAlert(null); }}>
                 Trade {hcAlert.edge} Now
               </button>
               <button className="btn btn-secondary" onClick={() => setHcAlert(null)}>Dismiss</button>
@@ -1323,13 +1325,13 @@ export default function App() {
         </div>
 
         <div className="topbar-right" style={{position: 'relative'}}>
-          <button className="btn btn-ghost" style={{display:"flex",alignItems:"center",gap:5,color:"#10b981",border:"1px solid #10b981",fontSize:12}} onClick={() => setShowOnboarding(true)}>
+          <button className="btn btn-ghost" style={{display:"flex",alignItems:"center",gap:6,color:"#10b981",border:"1px solid #10b981",borderRadius:'20px',padding:'6px 14px',fontSize:12,transition:'all 0.2s',cursor:'pointer'}} onMouseOver={e => e.currentTarget.style.background='#10b98122'} onMouseOut={e => e.currentTarget.style.background='transparent'} onClick={() => setShowOnboarding(true)}>
             📖 How to Play
           </button>
-          <button className="btn btn-ghost" style={{display:"flex",alignItems:"center",gap:5,color:"#f59e0b",border:"1px solid #f59e0b",fontSize:12}} onClick={addLitVMNetwork}>
+          <button className="btn btn-ghost" style={{display:"flex",alignItems:"center",gap:6,color:"#f59e0b",border:"1px solid #f59e0b",borderRadius:'20px',padding:'6px 14px',fontSize:12,transition:'all 0.2s',cursor:'pointer'}} onMouseOver={e => e.currentTarget.style.background='#f59e0b22'} onMouseOut={e => e.currentTarget.style.background='transparent'} onClick={addLitVMNetwork}>
             🦊 Add LitVM
           </button>
-          <a href="https://liteforge.hub.caldera.xyz" target="_blank" rel="noopener noreferrer" className="btn btn-ghost" style={{display:"flex",alignItems:"center",gap:5,color:"#3b82f6",border:"1px solid #3b82f6",textDecoration:"none",fontSize:12}}>
+          <a href="https://liteforge.hub.caldera.xyz" target="_blank" rel="noopener noreferrer" className="btn btn-ghost" style={{display:"flex",alignItems:"center",gap:6,color:"#3b82f6",border:"1px solid #3b82f6",borderRadius:'20px',padding:'6px 14px',textDecoration:"none",fontSize:12,transition:'all 0.2s',cursor:'pointer'}} onMouseOver={e => e.currentTarget.style.background='#3b82f622'} onMouseOut={e => e.currentTarget.style.background='transparent'}>
             🚰 Get zkLTC
           </a>
           
@@ -1479,8 +1481,8 @@ export default function App() {
                    <div style={{ fontSize: 18, fontWeight: 'bold' }}>{fmt4(biddingRound.totalAmount)} zkLTC</div>
                  </div>
                  <div style={{ display: 'flex', gap: 8 }}>
-                   <button className="trade-btn bull" onClick={() => { setTradeSide('Bull'); setActivePrediction({ epoch: biddingRound.epoch, side: 'Bull', pool: getMult(biddingRound, 'Bull') }); setActiveTab('slip'); }}>Bull</button>
-                   <button className="trade-btn bear" onClick={() => { setTradeSide('Bear'); setActivePrediction({ epoch: biddingRound.epoch, side: 'Bear', pool: getMult(biddingRound, 'Bear') }); setActiveTab('slip'); }}>Bear</button>
+                   <button style={{ flex: 1, padding: '16px', borderRadius: '999px', border: 'none', background: '#22c55e', color: 'white', fontWeight: '900', fontSize: '18px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 14px rgba(34, 197, 94, 0.4)' }} onMouseOver={e => e.currentTarget.style.transform = 'scale(1.05)'} onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'} onClick={() => { setTradeSide('YES'); setActivePrediction({ epoch: biddingRound.epoch, side: 'YES', pool: getMult(biddingRound, 'Bull') }); setActiveTab('slip'); }}>YES</button>
+                   <button style={{ flex: 1, padding: '16px', borderRadius: '999px', border: 'none', background: '#ef4444', color: 'white', fontWeight: '900', fontSize: '18px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 14px rgba(239, 68, 68, 0.4)' }} onMouseOver={e => e.currentTarget.style.transform = 'scale(1.05)'} onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'} onClick={() => { setTradeSide('NO'); setActivePrediction({ epoch: biddingRound.epoch, side: 'NO', pool: getMult(biddingRound, 'Bear') }); setActiveTab('slip'); }}>NO</button>
                  </div>
               </div>
             )}
@@ -1517,9 +1519,16 @@ export default function App() {
 
         {/* RIGHT COLUMN (Sidebar) */}
         <div style={{ width: 380, borderLeft: '1px solid var(--border)', background: 'var(--bg-panel)', display: 'flex', flexDirection: 'column' }}>
-          <div className="tabs" style={{ padding: 0, margin: 0, borderBottom: '1px solid var(--border)', display: 'flex', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '12px', background: 'var(--bg-panel)', borderBottom: '1px solid var(--border)' }}>
             {['slip', 'positions', 'chat', 'news', 'points', 'backtest'].map(t => (
-              <div key={t} className={`tab ${activeTab===t?'active':''}`} onClick={()=>setActiveTab(t)} style={{ flex: '1 1 30%', padding: '8px 4px', fontSize: 11, textTransform: 'capitalize' }}>
+              <div key={t} onClick={()=>setActiveTab(t)} style={{
+                flex: '1 1 auto', textAlign: 'center', padding: '8px 16px', borderRadius: '999px', fontSize: '13px', fontWeight: '600', cursor: 'pointer',
+                background: activeTab === t ? '#3b82f6' : 'var(--bg-input)',
+                color: activeTab === t ? '#ffffff' : 'var(--text-secondary)',
+                boxShadow: activeTab === t ? '0 4px 12px rgba(59, 130, 246, 0.4)' : 'none',
+                transition: 'all 0.2s ease',
+                textTransform: 'capitalize'
+              }} onMouseOver={e => { if(activeTab !== t) e.currentTarget.style.background = 'var(--border)' }} onMouseOut={e => { if(activeTab !== t) e.currentTarget.style.background = 'var(--bg-input)' }}>
                 {t === 'positions' ? 'Portfolio' : t}
               </div>
             ))}
@@ -1539,7 +1548,7 @@ export default function App() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ fontSize: 16, fontWeight: 'bold' }}>Round #{activePrediction.epoch}</div>
-                      <div style={{ background: activePrediction.side === 'Bull' ? '#22c55e22' : '#ef444422', color: activePrediction.side === 'Bull' ? '#22c55e' : '#ef4444', padding: '4px 12px', borderRadius: 4, fontWeight: 'bold' }}>{activePrediction.side}</div>
+                      <div style={{ background: (activePrediction.side === 'Bull' || activePrediction.side === 'YES') ? '#22c55e22' : '#ef444422', color: (activePrediction.side === 'Bull' || activePrediction.side === 'YES') ? '#22c55e' : '#ef4444', padding: '4px 12px', borderRadius: 4, fontWeight: 'bold' }}>{activePrediction.side}</div>
                     </div>
                     
                     <div className="form-group">
@@ -1557,7 +1566,7 @@ export default function App() {
                       <div style={{display:'flex', justifyContent:'space-between'}}><span>Est. Payout:</span> <b style={{color: '#22c55e'}}>{tradeEst.payout} zkLTC</b></div>
                     </div>
 
-                    <button className={`trade-btn ${activePrediction.side.toLowerCase()}`} onClick={() => { if(isPaperMode) logPaperTrade(activePrediction.side, tradeQty); else placeBet(); }} disabled={loading}>
+                    <button className={`trade-btn ${(activePrediction.side === 'Bull' || activePrediction.side === 'YES') ? 'bull' : 'bear'}`} onClick={() => { if(isPaperMode) logPaperTrade((activePrediction.side === 'Bull' || activePrediction.side === 'YES') ? 'Bull' : 'Bear', tradeQty); else placeBet(); }} disabled={loading} style={{ padding: '16px', borderRadius: '12px', fontWeight: 'bold', fontSize: '16px', transition: 'all 0.2s', boxShadow: (activePrediction.side === 'Bull' || activePrediction.side === 'YES') ? '0 4px 12px rgba(34, 197, 94, 0.3)' : '0 4px 12px rgba(239, 68, 68, 0.3)' }} onMouseOver={e => { if(!loading) e.currentTarget.style.transform = 'translateY(-2px)' }} onMouseOut={e => e.currentTarget.style.transform = 'translateY(0)'}>
                       {loading ? "Processing..." : "Confirm Prediction"}
                     </button>
                     
@@ -1717,7 +1726,7 @@ export default function App() {
                   </div>
                 )}
 
-                <button className="btn btn-primary" onClick={handleDailyCheckIn} disabled={lastCheckIn && (new Date().getTime() - parseInt(lastCheckIn)) < 86400000} style={{padding: 12, width: '100%'}}>
+                <button className="btn btn-primary" onClick={handleDailyCheckIn} disabled={lastCheckIn && (new Date().getTime() - parseInt(lastCheckIn)) < 86400000} style={{padding: '14px', width: '100%', borderRadius: '12px', fontWeight: 'bold', fontSize: '14px', transition: 'all 0.2s', boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)', cursor: (lastCheckIn && (new Date().getTime() - parseInt(lastCheckIn)) < 86400000) ? 'not-allowed' : 'pointer'}} onMouseOver={e => { if(!(lastCheckIn && (new Date().getTime() - parseInt(lastCheckIn)) < 86400000)) e.currentTarget.style.transform = 'translateY(-2px)' }} onMouseOut={e => e.currentTarget.style.transform = 'translateY(0)'}>
                   {lastCheckIn && (new Date().getTime() - parseInt(lastCheckIn)) < 86400000 ? 'Check back tomorrow' : '🎁 Daily Check-In (+50 LPs)'}
                 </button>
 
