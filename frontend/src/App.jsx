@@ -151,6 +151,35 @@ const useSoundAlerts = (soundEnabled) => {
 /* ══════════════════════════════════════════════════════
    MAIN APP
 ══════════════════════════════════════════════════════ */
+const MiniSparkline = ({ points = [40, 50, 45, 60, 55, 70, 65, 80], color = '#00d4ff' }) => {
+  const width = 180;
+  const height = 50;
+  const max = Math.max(...points);
+  const min = Math.min(...points);
+  const range = max - min || 1;
+  const coords = points.map((p, i) => {
+    const x = (i / (points.length - 1)) * (width - 10) + 5;
+    const y = height - ((p - min) / range) * (height - 10) - 5;
+    return `${x},${y}`;
+  });
+  const pathD = `M ${coords.join(' L ')}`;
+  const fillD = `M 5,${height} L ${coords.join(' L ')} L ${width - 5},${height} Z`;
+  const gradId = `grad-${color.replace('#','')}`;
+  return (
+    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ overflow: 'visible', margin: '8px 0' }}>
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.2" />
+          <stop offset="100%" stopColor={color} stopOpacity="0.0" />
+        </linearGradient>
+      </defs>
+      <path d={fillD} fill={`url(#${gradId})`} />
+      <path d={pathD} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={coords[coords.length-1].split(',')[0]} cy={coords[coords.length-1].split(',')[1]} r="3.5" fill={color} />
+    </svg>
+  );
+};
+
 export default function App() {
   /* ── View Mode & Points State ── */
   const [viewMode, setViewMode] = useState('landing');
@@ -1470,57 +1499,157 @@ export default function App() {
             ))}
           </div>
 
-          {/* ROUNDS GRID */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-            {/* Bidding Card */}
-            {biddingRound && (
+          {/* MIDDLE SECTION - 2x2 CARDS GRID */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            {/* Active Round (Bidding) */}
+            {biddingRound ? (
               <div className="round-card">
-                 <div className="rc-header"><span>#{biddingRound.epoch}</span><span className="rc-badge bidding">BIDDING</span></div>
+                 <div className="rc-header"><span>Round #{biddingRound.epoch} Bidding</span><span className="rc-badge bidding">BIDDING</span></div>
+                 <MiniSparkline points={[40, 45, 42, 50, 48, 55, 52, 60]} color="#22c55e" />
                  <div style={{ margin: '16px 0', textAlign: 'center' }}>
                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Current Pool</div>
                    <div style={{ fontSize: 18, fontWeight: 'bold' }}>{fmt4(biddingRound.totalAmount)} zkLTC</div>
                  </div>
-                 <div style={{ display: 'flex', gap: 8 }}>
+                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                    <button style={{ flex: 1, padding: '16px', borderRadius: '999px', border: 'none', background: '#22c55e', color: 'white', fontWeight: '900', fontSize: '18px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 14px rgba(34, 197, 94, 0.4)' }} onMouseOver={e => e.currentTarget.style.transform = 'scale(1.05)'} onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'} onClick={() => { setTradeSide('YES'); setActivePrediction({ epoch: biddingRound.epoch, side: 'YES', pool: getMult(biddingRound, 'Bull') }); setActiveTab('slip'); }}>YES</button>
                    <button style={{ flex: 1, padding: '16px', borderRadius: '999px', border: 'none', background: '#ef4444', color: 'white', fontWeight: '900', fontSize: '18px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 14px rgba(239, 68, 68, 0.4)' }} onMouseOver={e => e.currentTarget.style.transform = 'scale(1.05)'} onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'} onClick={() => { setTradeSide('NO'); setActivePrediction({ epoch: biddingRound.epoch, side: 'NO', pool: getMult(biddingRound, 'Bear') }); setActiveTab('slip'); }}>NO</button>
+                   <button className="icon-btn" onClick={() => toast("Sharing card generated!", "success")}>📤</button>
                  </div>
               </div>
+            ) : (
+              <div className="round-card skeleton">
+                <div className="skeleton-line" style={{width: '60%'}}></div>
+                <div className="skeleton-line"></div>
+                <div className="skeleton-line"></div>
+              </div>
             )}
-            {/* Live Card */}
-            {liveRound && (
+            
+            {/* Live Round */}
+            {liveRound ? (
               <div className="round-card">
-                 <div className="rc-header"><span>#{liveRound.epoch}</span><span className="rc-badge live">LIVE</span></div>
+                 <div className="rc-header"><span>Round #{liveRound.epoch} Live</span><span className="rc-badge live">LIVE</span></div>
+                 <MiniSparkline points={[60, 58, 62, 59, 65, 63, 68, 70]} color="#f59e0b" />
                  <div style={{ margin: '16px 0', textAlign: 'center' }}>
-                   <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Lock Price</div>
-                   <div style={{ fontSize: 16, fontWeight: 'bold' }}>${liveRound.lockPrice.toFixed(4)}</div>
-                   <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8 }}>Current Price</div>
-                   <div style={{ fontSize: 16, fontWeight: 'bold', color: ltcPrice > liveRound.lockPrice ? '#22c55e' : '#ef4444' }}>${ltcPrice.toFixed(4)}</div>
+                   <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Lock Price vs Current Price</div>
+                   <div style={{ fontSize: 16, fontWeight: 'bold' }}>${liveRound.lockPrice.toFixed(4)} → <span style={{color: ltcPrice > liveRound.lockPrice ? '#22c55e' : '#ef4444'}}>${ltcPrice.toFixed(4)}</span></div>
+                 </div>
+                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                   <button className="icon-btn" onClick={() => toast("Sharing card generated!", "success")}>📤</button>
                  </div>
               </div>
+            ) : (
+              <div className="round-card skeleton">
+                <div className="skeleton-line" style={{width: '60%'}}></div>
+                <div className="skeleton-line"></div>
+                <div className="skeleton-line"></div>
+              </div>
             )}
-            {/* Ended Card */}
-            {endedRound && (
+            
+            {/* Ended Round */}
+            {endedRound ? (
               <div className="round-card">
-                 <div className="rc-header"><span>#{endedRound.epoch}</span><span className="rc-badge ended">ENDED</span></div>
+                 <div className="rc-header"><span>Round #{endedRound.epoch} Ended</span><span className="rc-badge ended">ENDED</span></div>
+                 <MiniSparkline points={[70, 72, 71, 75, 78, 76, 80, 85]} color="#06b6d4" />
                  <div style={{ margin: '12px 0', textAlign: 'center' }}>
-                   <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Lock: ${endedRound.lockPrice.toFixed(4)}</div>
-                   <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Close: ${endedRound.closePrice.toFixed(4)}</div>
-                   <div style={{ marginTop: 8, fontWeight: 'bold', color: endedRound.closePrice > endedRound.lockPrice ? '#22c55e' : '#ef4444' }}>
+                   <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Lock: ${endedRound.lockPrice.toFixed(4)} | Close: ${endedRound.closePrice.toFixed(4)}</div>
+                   <div style={{ marginTop: 8, padding: '4px 8px', borderRadius: 4, display: 'inline-block', fontWeight: 'bold', background: endedRound.closePrice > endedRound.lockPrice ? '#22c55e22' : '#ef444422', color: endedRound.closePrice > endedRound.lockPrice ? '#22c55e' : '#ef4444' }}>
                      {endedRound.closePrice > endedRound.lockPrice ? 'BULL WON' : 'BEAR WON'}
                    </div>
                  </div>
-                 {claimableEpochs.includes(endedRound.epoch) && (
-                   <button className="btn btn-primary" style={{ width: '100%' }} onClick={claimAll}>Claim Reward</button>
-                 )}
+                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                   {claimableEpochs.includes(endedRound.epoch) && (
+                     <button className="btn btn-primary" style={{ flex: 1 }} onClick={claimAll}>Claim Reward</button>
+                   )}
+                   <button className="icon-btn" style={{ marginLeft: claimableEpochs.includes(endedRound.epoch) ? 0 : 'auto' }} onClick={() => toast("Sharing card generated!", "success")}>📤</button>
+                 </div>
+              </div>
+            ) : (
+              <div className="round-card skeleton">
+                <div className="skeleton-line" style={{width: '60%'}}></div>
+                <div className="skeleton-line"></div>
+                <div className="skeleton-line"></div>
               </div>
             )}
+            
+            {/* Custom Topic / Watchlist Card */}
+            <div className="round-card">
+              <div className="rc-header"><span>Will LTC remain above $90?</span><span className="rc-badge bidding">WATCHLIST</span></div>
+              <MiniSparkline points={[85, 87, 86, 89, 88, 91, 90, 92]} color="#a855f7" />
+              <div style={{ margin: '16px 0', textAlign: 'center' }}>
+                 <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Custom Topic Pool</div>
+                 <div style={{ fontSize: 18, fontWeight: 'bold' }}>1,245.50 zkLTC</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                 <button style={{ flex: 1, padding: '12px', borderRadius: '8px', border: 'none', background: 'var(--bg-input)', color: '#22c55e', fontWeight: 'bold', cursor: 'pointer' }}>YES (65%)</button>
+                 <button style={{ flex: 1, padding: '12px', borderRadius: '8px', border: 'none', background: 'var(--bg-input)', color: '#ef4444', fontWeight: 'bold', cursor: 'pointer' }}>NO (35%)</button>
+                 <button className="icon-btn" onClick={() => toast("Sharing card generated!", "success")}>📤</button>
+              </div>
+            </div>
+          </div>
+
+          {/* Row 4: Bottom Section */}
+          <div style={{ display: 'flex', gap: '16px', marginTop: '16px', minHeight: '300px' }}>
+            {/* Left Box: Chat Panel */}
+            <div style={{ flex: 1, background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ padding: 12, fontWeight: 'bold', borderBottom: '1px solid var(--border)' }}>Community Chat</div>
+              <div style={{ flex: 1, padding: 8, overflowY: 'auto', display:'flex', flexDirection:'column', gap: 12 }} ref={chatBodyRef}>
+                {chatMessages.map(m => (
+                  <div key={m.id} style={{fontSize: 12, lineHeight: 1.4}}>
+                    <div style={{display:'flex', alignItems:'center', gap:4, marginBottom: 2}}>
+                      <span>{m.avatar}</span>
+                      <span style={{fontWeight:'bold', color: m.color}}>{m.user}</span>
+                      {m.badge && <span style={{fontSize:9, background:'var(--bg-input)', padding:'1px 4px', borderRadius:2}}>{m.badge}</span>}
+                      <span style={{fontSize:10, color:'var(--text-secondary)', marginLeft:'auto'}}>{m.time}</span>
+                    </div>
+                    <div style={{color:'var(--text-primary)'}}>{m.text}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{padding: 8, borderTop: '1px solid var(--border)', display:'flex', gap:4}}>
+                <input type="text" className="form-control" placeholder="Type a message..." value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendChat()} />
+                <button className="btn btn-primary" onClick={sendChat}>Send</button>
+              </div>
+            </div>
+            
+            {/* Right Box: Live News Panel */}
+            <div style={{ flex: 1, background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ padding: 12, fontWeight: 'bold', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                Live News
+                <div style={{ display: 'flex', gap: 4 }}>
+                   {['all','litvm','litecoin','market','defi'].map(c => (
+                     <div key={c} className={`tab ${newsCategory===c ? 'active' : ''}`} style={{padding: '4px 8px', fontSize: 10, borderRadius: 12, background: newsCategory===c ? '#3b82f6' : 'transparent', color: newsCategory===c ? 'white' : 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap', textTransform: 'uppercase'}} onClick={() => setNewsCategory(c)}>
+                       {c}
+                     </div>
+                   ))}
+                </div>
+              </div>
+              <div style={{ padding: 8, overflowY: 'auto', flex: 1 }}>
+                {newsItems.filter(n => newsCategory === 'all' || n.tag === newsCategory).map(n => (
+                  <div style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }} key={n.id}>
+                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
+                      <span style={{ fontSize: 10, padding: '2px 4px', borderRadius: 2, background: 'var(--bg-input)', color: 'var(--text-secondary)' }}>{n.tagLabel}</span>
+                      <div style={{display:'flex', gap:4}}>
+                        <span className="icon-btn" onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(n.title)}`, '_blank')} title="Search on Google">🔍</span>
+                        <span className="icon-btn" onClick={() => window.open(`https://twitter.com/search?q=${encodeURIComponent(n.title)}&src=typed_query`, '_blank')} title="Search on Twitter/X">🐦</span>
+                      </div>
+                    </div>
+                    <div
+                      style={{ fontSize: 13, margin: '4px 0', cursor: n.url ? 'pointer' : 'default' }}
+                      onClick={() => n.url && window.open(n.url, '_blank')}
+                      title={n.url ? "Read full article" : ""}
+                    >{n.title}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'flex', gap: 4 }}><span>{n.source}</span>·<span>{n.time}</span></div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 
         {/* RIGHT COLUMN (Sidebar) */}
         <div style={{ width: 380, borderLeft: '1px solid var(--border)', background: 'var(--bg-panel)', display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '12px', background: 'var(--bg-panel)', borderBottom: '1px solid var(--border)' }}>
-            {['slip', 'positions', 'chat', 'news', 'points', 'backtest'].map(t => (
+            {['slip', 'positions', 'points', 'backtest'].map(t => (
               <div key={t} onClick={()=>setActiveTab(t)} style={{
                 flex: '1 1 auto', textAlign: 'center', padding: '8px 16px', borderRadius: '999px', fontSize: '13px', fontWeight: '600', cursor: 'pointer',
                 background: activeTab === t ? '#3b82f6' : 'var(--bg-input)',
@@ -1643,61 +1772,6 @@ export default function App() {
                     </div>
                   </div>
                 )}
-              </div>
-            )}
-
-            {/* CHAT TAB */}
-            {activeTab === 'chat' && (
-              <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
-                <div style={{ flex: 1, padding: 8, overflowY: 'auto', display:'flex', flexDirection:'column', gap: 12 }} ref={chatBodyRef}>
-                  {chatMessages.map(m => (
-                    <div key={m.id} style={{fontSize: 12, lineHeight: 1.4}}>
-                      <div style={{display:'flex', alignItems:'center', gap:4, marginBottom: 2}}>
-                        <span>{m.avatar}</span>
-                        <span style={{fontWeight:'bold', color: m.color}}>{m.user}</span>
-                        {m.badge && <span style={{fontSize:9, background:'var(--bg-input)', padding:'1px 4px', borderRadius:2}}>{m.badge}</span>}
-                        <span style={{fontSize:10, color:'var(--text-secondary)', marginLeft:'auto'}}>{m.time}</span>
-                      </div>
-                      <div style={{color:'var(--text-primary)'}}>{m.text}</div>
-                    </div>
-                  ))}
-                </div>
-                <div style={{padding: 8, borderTop: '1px solid var(--border)', display:'flex', gap:4}}>
-                  <input type="text" className="form-control" placeholder="Type a message..." value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendChat()} />
-                  <button className="btn btn-primary" onClick={sendChat}>Send</button>
-                </div>
-              </div>
-            )}
-
-            {/* NEWS TAB */}
-            {activeTab === 'news' && (
-              <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                <div style={{ padding: 8, borderBottom: '1px solid var(--border)', display: 'flex', gap: 4, overflowX: 'auto' }}>
-                  {['all','litvm','litecoin','market','defi'].map(c => (
-                    <div key={c} className={`tab ${newsCategory===c ? 'active' : ''}`} style={{padding: '4px 8px', fontSize: 11, borderRadius: 12, background: newsCategory===c ? '#3b82f6' : 'var(--bg-input)', color: newsCategory===c ? 'white' : 'var(--text-primary)', cursor: 'pointer', whiteSpace: 'nowrap'}} onClick={() => setNewsCategory(c)}>
-                      {c.toUpperCase()}
-                    </div>
-                  ))}
-                </div>
-                <div style={{ padding: 8, overflowY: 'auto', flex: 1 }}>
-                  {newsItems.filter(n => newsCategory === 'all' || n.tag === newsCategory).map(n => (
-                    <div style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }} key={n.id}>
-                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
-                        <span style={{ fontSize: 10, padding: '2px 4px', borderRadius: 2, background: 'var(--bg-input)', color: 'var(--text-secondary)' }}>{n.tagLabel}</span>
-                        <div style={{display:'flex', gap:4}}>
-                          <span className="icon-btn" onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(n.title)}`, '_blank')} title="Search on Google">🔍</span>
-                          <span className="icon-btn" onClick={() => window.open(`https://twitter.com/search?q=${encodeURIComponent(n.title)}&src=typed_query`, '_blank')} title="Search on Twitter/X">🐦</span>
-                        </div>
-                      </div>
-                      <div
-                        style={{ fontSize: 13, margin: '4px 0', cursor: n.url ? 'pointer' : 'default' }}
-                        onClick={() => n.url && window.open(n.url, '_blank')}
-                        title={n.url ? "Read full article" : ""}
-                      >{n.title}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'flex', gap: 4 }}><span>{n.source}</span>·<span>{n.time}</span></div>
-                    </div>
-                  ))}
-                </div>
               </div>
             )}
 
