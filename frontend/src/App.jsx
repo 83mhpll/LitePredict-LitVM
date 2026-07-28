@@ -1028,32 +1028,119 @@ export default function App() {
     <div className={`app ${settings.isDarkTheme ? '' : 'light-theme'}`}>
 
       {viewMode === 'landing' ? (
-        <div style={{display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', padding:40, textAlign:'center', background: 'linear-gradient(135deg, var(--bg-main) 0%, var(--bg-panel) 100%)'}}>
-          <div style={{fontSize: 72, marginBottom: 20}}>🔮</div>
-          <h1 style={{fontSize: 48, marginBottom: 16, background: 'linear-gradient(90deg, #3b82f6, #8b5cf6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'}}>LitePredict on LitVM</h1>
-          <p style={{fontSize: 20, color: 'var(--text-secondary)', maxWidth: 600, marginBottom: 40}}>
-            The premier prediction market for the Litecoin ecosystem. Predict LTC price movements, earn LPs, and climb the leaderboard on the high-speed LitVM Testnet.
-          </p>
-          <div style={{display:'flex', gap: 16, marginBottom: 60}}>
-            <button className="btn btn-primary" style={{fontSize: 18, padding: '16px 32px'}} onClick={() => setViewMode('app')}>Launch App</button>
-            <button className="btn btn-ghost" style={{fontSize: 18, padding: '16px 32px', border: '2px solid #f59e0b', color: '#f59e0b'}} onClick={addLitVMNetwork}>🦊 Add LitVM Testnet</button>
-            <button className="btn btn-secondary" style={{fontSize: 18, padding: '16px 32px'}} onClick={() => { setViewMode('app'); setShowOnboarding(true); }}>📖 How to Play</button>
-          </div>
+        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#09090b', color: '#f8fafc', overflowY: 'auto', overflowX: 'hidden', fontFamily: 'Inter, system-ui, sans-serif' }}>
           
-          <div style={{display:'flex', gap:40, opacity: 0.8}}>
-            <div>
-              <div style={{fontSize: 24, fontWeight: 'bold'}}>{currentEpoch}</div>
-              <div style={{fontSize: 12, color: 'var(--text-secondary)'}}>Rounds Played</div>
+          <header style={{ position: 'fixed', top: 0, width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 32px', background: 'rgba(9, 9, 11, 0.8)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(255,255,255,0.05)', zIndex: 100, boxSizing: 'border-box' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+              <div style={{ fontSize: 24, fontWeight: 800, background: 'linear-gradient(90deg, #3b82f6, #8b5cf6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', cursor: 'pointer' }}>LitePredict</div>
+              <nav style={{ display: 'flex', gap: 24, fontSize: 14, fontWeight: 500, color: '#94a3b8' }}>
+                <a href="#" style={{ color: '#f8fafc', textDecoration: 'none' }}>Home</a>
+                <a href="#" onClick={(e) => { e.preventDefault(); setViewMode('app'); }} style={{ textDecoration: 'none', color: 'inherit', transition: 'color 0.2s' }} onMouseOver={e => e.currentTarget.style.color = '#f8fafc'} onMouseOut={e => e.currentTarget.style.color = '#94a3b8'}>Markets</a>
+                <a href="#" onClick={(e) => { e.preventDefault(); setViewMode('app'); }} style={{ textDecoration: 'none', color: 'inherit', transition: 'color 0.2s' }} onMouseOver={e => e.currentTarget.style.color = '#f8fafc'} onMouseOut={e => e.currentTarget.style.color = '#94a3b8'}>Rewards</a>
+              </nav>
             </div>
-            <div>
-              <div style={{fontSize: 24, fontWeight: 'bold'}}>8,000 TPS</div>
-              <div style={{fontSize: 12, color: 'var(--text-secondary)'}}>LitVM Speed</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <button onClick={addLitVMNetwork} style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)', padding: '8px 16px', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }} onMouseOver={e => e.currentTarget.style.background = 'rgba(245, 158, 11, 0.2)'} onMouseOut={e => e.currentTarget.style.background = 'rgba(245, 158, 11, 0.1)'}>🦊 Add LitVM Network</button>
+              <button onClick={() => setViewMode('app')} style={{ background: '#f8fafc', color: '#0f172a', border: 'none', padding: '8px 16px', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }} onMouseOver={e => e.currentTarget.style.opacity = 0.9} onMouseOut={e => e.currentTarget.style.opacity = 1}>Connect / Launch App</button>
             </div>
-            <div>
-              <div style={{fontSize: 24, fontWeight: 'bold'}}>DIA</div>
-              <div style={{fontSize: 12, color: 'var(--text-secondary)'}}>Trustless Oracle</div>
+          </header>
+
+          <main style={{ paddingTop: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', boxSizing: 'border-box' }}>
+            
+            <section style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '80px 20px', maxWidth: 900 }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.2)', padding: '6px 12px', borderRadius: 999, marginBottom: 32 }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 8px #22c55e' }}></div>
+                <span style={{ color: '#22c55e', fontSize: 12, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>LitVM Testnet Live</span>
+              </div>
+              
+              <h1 style={{ fontSize: 'clamp(40px, 6vw, 72px)', fontWeight: 800, lineHeight: 1.1, marginBottom: 24, letterSpacing: '-0.02em', margin: '0 0 24px 0' }}>
+                Predict the Price.<br/>
+                <span style={{ background: 'linear-gradient(135deg, #3b82f6, #a855f7, #ec4899)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Multiply zkLTC on LitVM.</span>
+              </h1>
+              
+              <p style={{ fontSize: 'clamp(16px, 2vw, 20px)', color: '#94a3b8', maxWidth: 640, lineHeight: 1.6, margin: '0 0 48px 0' }}>
+                The premier trustless prediction market for the Litecoin ecosystem. Settle price action in 5-minute epochs with real-time on-chain liquidity.
+              </p>
+              
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'center' }}>
+                <button onClick={() => setViewMode('app')} style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)', color: '#fff', border: 'none', padding: '16px 32px', borderRadius: 12, fontSize: 16, fontWeight: 600, cursor: 'pointer', boxShadow: '0 4px 24px rgba(59, 130, 246, 0.3)', transition: 'transform 0.2s, box-shadow 0.2s' }} onMouseOver={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 32px rgba(59, 130, 246, 0.4)'; }} onMouseOut={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 24px rgba(59, 130, 246, 0.3)'; }}>Visit Markets</button>
+                <button onClick={() => { setViewMode('app'); setShowOnboarding(true); }} style={{ background: 'rgba(255, 255, 255, 0.05)', color: '#f8fafc', border: '1px solid rgba(255, 255, 255, 0.1)', padding: '16px 32px', borderRadius: 12, fontSize: 16, fontWeight: 600, cursor: 'pointer', backdropFilter: 'blur(10px)', transition: 'background 0.2s' }} onMouseOver={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'} onMouseOut={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}>How to Play</button>
+              </div>
+            </section>
+
+            <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 24, width: '100%', maxWidth: 1000, padding: '0 20px', marginBottom: 120, boxSizing: 'border-box' }}>
+              {[
+                { label: 'Total Rounds', value: currentEpoch },
+                { label: 'LitVM Rollup', value: '8,000 TPS' },
+                { label: 'Price Feed Oracle', value: 'DIA' },
+                { label: 'Accumulate points', value: 'Earn LPs' }
+              ].map((stat, i) => (
+                <div key={i} style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: 16, padding: 24, textAlign: 'center', backdropFilter: 'blur(10px)' }}>
+                  <div style={{ fontSize: 14, color: '#94a3b8', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{stat.label}</div>
+                  <div style={{ fontSize: 32, fontWeight: 700, background: 'linear-gradient(90deg, #f8fafc, #cbd5e1)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{stat.value}</div>
+                </div>
+              ))}
+            </section>
+
+            <section style={{ width: '100%', maxWidth: 1200, padding: '0 20px', marginBottom: 120, boxSizing: 'border-box' }}>
+              <h2 style={{ fontSize: 36, fontWeight: 800, textAlign: 'center', margin: '0 0 64px 0' }}>The Engine of Conviction</h2>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 24 }}>
+                {[
+                  { title: 'Trustless Oracle Settle', desc: 'LitePredict leverages decentralized DIA oracles on LitVM to resolve prediction outcomes securely and automatically.', icon: '⚖️', glow: '#3b82f6' },
+                  { title: 'Incentivized Testnet', desc: 'Every prediction made earns you LitePoints (LPs). Climb the leaderboard to earn points for future mainnet benefits.', icon: '🏆', glow: '#a855f7' },
+                  { title: 'Virtual Practice Arena', desc: 'Toggle Paper Trading anytime to test momentum or contrarian trading strategies with zero risk.', icon: '🎮', glow: '#22c55e' }
+                ].map((feature, i) => (
+                  <div key={i} style={{ background: 'rgba(15, 23, 42, 0.4)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: 24, padding: 32, position: 'relative', overflow: 'hidden', transition: 'transform 0.3s' }} onMouseOver={e => e.currentTarget.style.transform = 'translateY(-4px)'} onMouseOut={e => e.currentTarget.style.transform = 'translateY(0)'}>
+                    <div style={{ position: 'absolute', top: -50, right: -50, width: 150, height: 150, background: feature.glow, filter: 'blur(80px)', opacity: 0.15 }}></div>
+                    <div style={{ fontSize: 40, marginBottom: 24 }}>{feature.icon}</div>
+                    <h3 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 16px 0' }}>{feature.title}</h3>
+                    <p style={{ color: '#94a3b8', lineHeight: 1.6, margin: 0 }}>{feature.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section style={{ width: '100%', maxWidth: 800, padding: '0 20px', marginBottom: 120, boxSizing: 'border-box' }}>
+              <h2 style={{ fontSize: 36, fontWeight: 800, textAlign: 'center', margin: '0 0 48px 0' }}>Frequently Asked Questions</h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {[
+                  { q: 'What is LitePredict?', a: 'LitePredict is a decentralized prediction market built on LitVM, allowing users to forecast the price movements of Litecoin in short, 5-minute intervals.' },
+                  { q: 'How do I add the LitVM network?', a: 'Simply click the "Add LitVM Network" button in the header, or manually configure your Web3 wallet with the LitVM RPC endpoints and chain ID provided in our documentation.' },
+                  { q: 'How are LitePoints (LPs) calculated?', a: 'LitePoints are awarded based on your prediction volume and success rate. Winning predictions yield a higher LP multiplier, helping you climb the testnet leaderboard faster.' }
+                ].map((faq, i) => (
+                  <details key={i} style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: 16, cursor: 'pointer' }}>
+                    <summary style={{ padding: '24px', fontSize: 18, fontWeight: 600, listStyle: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', outline: 'none' }}>
+                      {faq.q}
+                      <span style={{ color: '#64748b', fontSize: 24, lineHeight: 1 }}>+</span>
+                    </summary>
+                    <div style={{ padding: '0 24px 24px', color: '#94a3b8', lineHeight: 1.6 }}>
+                      {faq.a}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </section>
+          </main>
+
+          <footer style={{ width: '100%', padding: '40px 32px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 24, marginTop: 'auto', background: '#09090b', boxSizing: 'border-box' }}>
+            <div style={{ color: '#64748b', fontSize: 14 }}>
+              &copy; {new Date().getFullYear()} LitePredict. All rights reserved.
             </div>
-          </div>
+            <div style={{ display: 'flex', gap: 16 }}>
+              <a href="#" style={{ color: '#94a3b8', textDecoration: 'none', transition: 'color 0.2s' }} onMouseOver={e => e.currentTarget.style.color = '#f8fafc'} onMouseOut={e => e.currentTarget.style.color = '#94a3b8'}>Twitter (X)</a>
+              <a href="#" style={{ color: '#94a3b8', textDecoration: 'none', transition: 'color 0.2s' }} onMouseOver={e => e.currentTarget.style.color = '#f8fafc'} onMouseOut={e => e.currentTarget.style.color = '#94a3b8'}>Telegram</a>
+            </div>
+          </footer>
+          
+          <style>{`
+            details > summary::-webkit-details-marker {
+              display: none;
+            }
+            details[open] summary span {
+              transform: rotate(45deg);
+              display: inline-block;
+            }
+          `}</style>
         </div>
       ) : (
         <>
