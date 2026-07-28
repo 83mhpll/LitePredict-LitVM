@@ -257,6 +257,7 @@ export default function App() {
   const [toasts, setToasts] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [activePrediction, setActivePrediction] = useState(null);
   const [watchlist, setWatchlist] = useState(() => {
     try { const saved = localStorage.getItem("lp_watchlist"); return saved ? new Set(JSON.parse(saved)) : new Set(); }
     catch { return new Set(); }
@@ -1166,34 +1167,6 @@ export default function App() {
         .topbar-brand { display: flex; align-items: center; gap: 8px; font-weight: bold; }
         .topbar-divider { width: 1px; height: 24px; background: var(--border); margin: 0 12px; }
         .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
-        .main-content { display: flex; flex-direction: column; flex: 1; overflow: hidden; padding: 8px; gap: 8px; }
-        .chart-section { flex: 1; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px; display: flex; flex-direction: column; position: relative; }
-        .chart-toolbar { display: flex; padding: 4px 8px; border-bottom: 1px solid var(--border); }
-        .chart-canvas-area { flex: 1; position: relative; }
-        .rounds-row { display: flex; gap: 8px; height: 100px; flex-shrink: 0; }
-        .round-card { flex: 1; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px; padding: 8px; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; justify-content: space-between; }
-        .round-card:hover { border-color: #3b82f6; }
-        .round-card.skeleton { animation: pulse 1.5s infinite; }
-        .rc-header { display: flex; justify-content: space-between; align-items: center; }
-        .rc-badge { font-size: 10px; padding: 2px 4px; border-radius: 2px; }
-        .rc-badge.bidding { background: #3b82f622; color: #3b82f6; }
-        .rc-badge.live { background: #f59e0b22; color: #f59e0b; }
-        .rc-badge.ended { background: #64748b22; color: #64748b; }
-        .rc-pools { display: flex; justify-content: space-between; font-size: 13px; margin: 8px 0; }
-        .rc-pool.bull { color: #22c55e; } .rc-pool.bear { color: #ef4444; }
-        .rc-footer { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-secondary); }
-        .rc-score { border: 1px solid; padding: 1px 4px; border-radius: 4px; font-weight: bold; }
-        .bottom-panels { display: flex; gap: 8px; height: 35%; flex-shrink: 0; }
-        .panel { flex: 1; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px; display: flex; flex-direction: column; overflow: hidden; }
-        .panel-header { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid var(--border); background: var(--bg-main); font-weight: bold; }
-        .panel-body { flex: 1; overflow-y: auto; padding: 8px; }
-        .news-item { padding: 8px 0; border-bottom: 1px solid var(--border); }
-        .news-item:last-child { border-bottom: none; }
-        .news-tag { font-size: 10px; padding: 2px 4px; border-radius: 2px; margin-right: 6px; }
-        .news-tag.litvm { background: #3b82f622; color: #3b82f6; }
-        .news-tag.litecoin { background: #8b5cf622; color: #8b5cf6; }
-        .news-title { font-size: 13px; margin: 4px 0; }
-        .news-meta { font-size: 11px; color: var(--text-secondary); display: flex; gap: 4px; }
         .btn { padding: 6px 12px; border-radius: 4px; cursor: pointer; border: none; font-size: 13px; font-weight: bold; }
         .btn-primary { background: #3b82f6; color: white; }
         .btn-secondary { background: var(--bg-input); color: var(--text-primary); }
@@ -1213,7 +1186,6 @@ export default function App() {
         .form-group { margin-bottom: 12px; }
         .form-group label { display: block; font-size: 12px; margin-bottom: 4px; color: var(--text-secondary); }
         .form-control { width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-input); color: var(--text-primary); }
-        .trade-panel { display: flex; flex-direction: column; gap: 12px; }
         .trade-btn { flex: 1; padding: 12px; font-size: 16px; font-weight: bold; border-radius: 4px; border: none; cursor: pointer; color: white; }
         .trade-btn.bull { background: #22c55e; } .trade-btn.bear { background: #ef4444; }
         .table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -1224,8 +1196,13 @@ export default function App() {
         .notif-dropdown { position: absolute; top: 40px; right: 0; width: 300px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 100; max-height: 400px; overflow-y: auto; }
         .notif-item { padding: 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
         .notif-item.unread { background: var(--bg-input); font-weight: bold; }
-        .skeleton-line { height: 12px; background: var(--bg-input); border-radius: 4px; margin-bottom: 6px; }
-        @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+        
+        .round-card { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; justify-content: space-between; }
+        .rc-header { display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
+        .rc-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; }
+        .rc-badge.bidding { background: #3b82f622; color: #3b82f6; }
+        .rc-badge.live { background: #f59e0b22; color: #f59e0b; }
+        .rc-badge.ended { background: #64748b22; color: #64748b; }
       `}</style>
 
       {/* ═══ TOASTS ═══ */}
@@ -1297,8 +1274,8 @@ export default function App() {
             </div>
             {contextModalRound.epoch === currentEpoch && (
               <div style={{display:'flex', gap:8, marginTop: 16}}>
-                <button className="trade-btn bull" onClick={() => { setTradeSide('Bull'); setActiveTab('trade'); setContextModalRound(null); }}>Trade Bull</button>
-                <button className="trade-btn bear" onClick={() => { setTradeSide('Bear'); setActiveTab('trade'); setContextModalRound(null); }}>Trade Bear</button>
+                <button className="trade-btn bull" onClick={() => { setActivePrediction({ epoch: currentEpoch, side: 'Bull', pool: getMult(contextModalRound, 'Bull') }); setActiveTab('slip'); setContextModalRound(null); }}>Trade Bull</button>
+                <button className="trade-btn bear" onClick={() => { setActivePrediction({ epoch: currentEpoch, side: 'Bear', pool: getMult(contextModalRound, 'Bear') }); setActiveTab('slip'); setContextModalRound(null); }}>Trade Bear</button>
               </div>
             )}
           </div>
@@ -1315,7 +1292,7 @@ export default function App() {
               Opportunity Score: <b>{hcAlert.score}</b> (Threshold: {settings.alertThreshold})
             </p>
             <div style={{display:'flex', gap:8}}>
-              <button className={`trade-btn ${hcAlert.edge.toLowerCase()}`} onClick={() => { setTradeSide(hcAlert.edge); setActiveTab('trade'); setHcAlert(null); }}>
+              <button className={`trade-btn ${hcAlert.edge.toLowerCase()}`} onClick={() => { setActivePrediction({ epoch: hcAlert.epoch, side: hcAlert.edge, pool: hcAlert.edge === 'Bull' ? getMult(rounds[hcAlert.epoch], 'Bull') : getMult(rounds[hcAlert.epoch], 'Bear') }); setActiveTab('slip'); setHcAlert(null); }}>
                 Trade {hcAlert.edge} Now
               </button>
               <button className="btn btn-secondary" onClick={() => setHcAlert(null)}>Dismiss</button>
@@ -1399,346 +1376,427 @@ export default function App() {
         </div>
       </header>
 
-      {/* ═══ MAIN ═══ */}
-      <div className="main-content">
-
-        {/* ── CHART SECTION ── */}
-        <div className="chart-section" style={{flex: 1.5}}>
-          <div className="chart-toolbar">
-            <div style={{display:'flex', gap:4}}>
-              {["Candles","Line","Area"].map(t => (
-                <button key={t} className="btn btn-ghost" style={{background: chartType===t ? 'var(--bg-input)' : 'transparent'}} onClick={() => setChartType(t)}>{t}</button>
-              ))}
-            </div>
+      {/* ═══ MAIN APP LAYOUT (MERIDIAN) ═══ */}
+      <div className="main-content" style={{ display: 'flex', flexDirection: 'row', height: 'calc(100vh - 50px)', overflow: 'hidden', padding: 0 }}>
+        
+        {/* LEFT COLUMN */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', padding: '16px', gap: '16px' }}>
+          
+          {/* SUB HEADER BANNER */}
+          <div style={{ border: '1px solid #eab308', borderRadius: 8, padding: 12, background: 'rgba(234, 179, 8, 0.1)', boxShadow: '0 0 10px rgba(234, 179, 8, 0.2)', color: '#f59e0b', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 8 }}>
+            ● LitVM is Live — Fee-free predictions, $5,000 + 150,000 PONS in prizes this cycle
           </div>
-          <div className="chart-canvas-area">
-            <div id="tv-chart" ref={chartContainerRef} style={{width:"100%",height:"100%"}} />
-            <div style={{position:'absolute', top: 16, left: 16, display:'flex', gap: 8, flexDirection:'column'}}>
-               <div style={{background: 'var(--bg-panel)', padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6}}>
-                 <div style={{width:6, height:6, borderRadius:'50%', background:'#ef4444', animation: 'pulse 1s infinite'}} />
-                 Closes in: <b style={{color: timeLeft < 30 ? '#ef4444' : 'inherit'}}>{fmtTime(timeLeft)}</b>
-               </div>
-            </div>
+
+          {/* CATEGORIES BAR */}
+          <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4 }}>
+             {['All', 'Crypto', 'Finance', 'Geopolitics', 'Politics', 'Sports', 'Tech', 'Weather'].map(c => (
+               <div key={c} style={{ padding: '6px 12px', background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 20, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>{c}</div>
+             ))}
           </div>
-        </div>
 
-        {/* ── ROUND CARDS PANEL ── */}
-        <div className="rounds-row">
-          <RoundCard r={biddingRound} type="bidding" />
-          <RoundCard r={liveRound} type="live" />
-          <RoundCard r={endedRound} type="ended" />
-        </div>
+          {/* MERIDIAN HERO AREA */}
+          <div style={{ display: 'flex', gap: 16 }}>
+            {/* Left Card: Featured */}
+            <div style={{ flex: 2, background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 12 }}>LTC price in Round #{currentEpoch}?</div>
+              
+              <div style={{ display: 'flex', gap: 16, marginBottom: 12, fontSize: 14 }}>
+                <div style={{ fontSize: 24, fontWeight: 'bold', color: priceDir==='up'?'#22c55e':priceDir==='down'?'#ef4444':'var(--text-primary)' }}>${fmt4(ltcPrice)}</div>
+                <div><div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>24h Change</div><div style={{ color: priceChange24h >= 0 ? '#22c55e' : '#ef4444' }}>{priceChange24h >= 0 ? '+' : ''}{priceChange24h}%</div></div>
+                <div><div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>24h Vol</div><div>{vol24h}</div></div>
+              </div>
 
-        {/* ── BOTTOM 3 PANELS ── */}
-        <div className="bottom-panels" style={{flex: 1.2}}>
+              <div style={{ flex: 1, minHeight: 250, position: 'relative' }}>
+                <div id="tv-chart" ref={chartContainerRef} style={{ width: '100%', height: '100%', position: 'absolute' }}></div>
+              </div>
 
-          {/* ── LEFT: NEWS ── */}
-          <div className="panel" style={{flex: 1}}>
-            <div className="panel-header" style={{padding:0}}>
-              <div className="tabs">
-                {['all','litvm','litecoin','market','defi'].map(c => (
-                  <div key={c} className={`tab ${newsCategory===c ? 'active' : ''}`} style={{padding: '8px 4px', fontSize: 11}} onClick={() => setNewsCategory(c)}>
-                    {c.toUpperCase()}
+              {/* Bull/Bear ratio indicator */}
+              {biddingRound && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                    <span style={{ color: '#22c55e' }}>Bull {getMult(biddingRound, 'Bull')}</span>
+                    <span style={{ color: '#ef4444' }}>Bear {getMult(biddingRound, 'Bear')}</span>
                   </div>
-                ))}
+                  <div style={{ width: '100%', height: 6, background: 'var(--bg-input)', borderRadius: 3, overflow: 'hidden', display: 'flex' }}>
+                     {(() => {
+                       const b = parseFloat(biddingRound.bullAmount);
+                       const br = parseFloat(biddingRound.bearAmount);
+                       const tot = b + br;
+                       const bPct = tot > 0 ? (b/tot)*100 : 50;
+                       return (
+                         <>
+                           <div style={{ width: `${bPct}%`, background: '#22c55e' }}></div>
+                           <div style={{ width: `${100-bPct}%`, background: '#ef4444' }}></div>
+                         </>
+                       );
+                     })()}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Right Card: Trending Sidebar */}
+            <div style={{ flex: 1, background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ fontSize: 16, fontWeight: 'bold', marginBottom: 12 }}>Trending History</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1, overflowY: 'auto' }}>
+                {[currentEpoch-2, currentEpoch-3, currentEpoch-4].map(ep => {
+                  const r = rounds[ep];
+                  if (!r) return null;
+                  const winner = r.closePrice > r.lockPrice ? 'BULL' : 'BEAR';
+                  const winnerColor = winner === 'BULL' ? '#22c55e' : '#ef4444';
+                  return (
+                    <div key={ep} style={{ padding: 12, background: 'var(--bg-input)', borderRadius: 6 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                        <span>Round #{ep}</span>
+                        <span>Pool: {fmt4(r.totalAmount)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ fontSize: 13 }}>Result</div>
+                        <div style={{ background: `${winnerColor}22`, color: winnerColor, padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 'bold' }}>{winner} WON</div>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
-            <div className="panel-body">
-              {newsItems.filter(n => newsCategory === 'all' || n.tag === newsCategory).map(n => (
-                <div className="news-item" key={n.id}>
-                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
-                    <span className={`news-tag ${n.tag}`}>{n.tagLabel}</span>
-                    <div style={{display:'flex', gap:4}}>
-                      <span className="icon-btn" onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(n.title)}`, '_blank')} title="Search on Google">🔍</span>
-                      <span className="icon-btn" onClick={() => window.open(`https://twitter.com/search?q=${encodeURIComponent(n.title)}&src=typed_query`, '_blank')} title="Search on Twitter/X">🐦</span>
-                    </div>
-                  </div>
-                  <div
-                    className="news-title"
-                    style={{cursor: n.url ? 'pointer' : 'default'}}
-                    onClick={() => n.url && window.open(n.url, '_blank')}
-                    title={n.url ? "Read full article" : ""}
-                  >{n.title}</div>
-                  <div className="news-meta"><span>{n.source}</span>·<span>{n.time}</span></div>
-                </div>
-              ))}
-            </div>
           </div>
 
-          {/* ── CENTER: CHAT ── */}
-          <div className="panel" style={{flex: 1}}>
-            <div className="panel-header"><span className="panel-title">Community Chat</span></div>
-            <div className="panel-body" ref={chatBodyRef} style={{display:'flex', flexDirection:'column', gap:8}}>
-              {chatMessages.map(m => (
-                <div key={m.id} style={{fontSize: 12, lineHeight: 1.4}}>
-                  <div style={{display:'flex', alignItems:'center', gap:4, marginBottom: 2}}>
-                    <span>{m.avatar}</span>
-                    <span style={{fontWeight:'bold', color: m.color}}>{m.user}</span>
-                    {m.badge && <span style={{fontSize:9, background:'var(--bg-input)', padding:'1px 4px', borderRadius:2}}>{m.badge}</span>}
-                    <span style={{fontSize:10, color:'var(--text-secondary)', marginLeft:'auto'}}>{m.time}</span>
-                  </div>
-                  <div style={{color:'var(--text-primary)'}}>{m.text}</div>
-                </div>
-              ))}
-            </div>
-            <div style={{padding: 8, borderTop: '1px solid var(--border)', display:'flex', gap:4}}>
-              <input type="text" className="form-control" placeholder="Type a message..." value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendChat()} />
-              <button className="btn btn-primary" onClick={sendChat}>Send</button>
-            </div>
+          {/* FILTERS BAR */}
+          <div style={{ display: 'flex', gap: 16, borderBottom: '1px solid var(--border)', paddingBottom: 8, marginTop: 8 }}>
+            {['Trending', 'Open Rounds', 'Watchlist', 'History'].map(f => (
+              <div key={f} style={{ fontSize: 14, fontWeight: 'bold', color: f === 'Open Rounds' ? 'var(--text-primary)' : 'var(--text-secondary)', cursor: 'pointer' }}>{f}</div>
+            ))}
           </div>
 
-          {/* ── RIGHT: TRADING & TABS ── */}
-          <div className="panel" style={{flex: 1.5}}>
-            <div className="tabs" style={{padding: 0, margin: 0, borderBottom: '1px solid var(--border)'}}>
-              <div className={`tab ${activeTab==='orderbook'?'active':''}`} onClick={()=>setActiveTab('orderbook')}>Book</div>
-              <div className={`tab ${activeTab==='trade'?'active':''}`} onClick={()=>setActiveTab('trade')}>Trade</div>
-              <div className={`tab ${activeTab==='positions'?'active':''}`} onClick={()=>setActiveTab('positions')}>Portfolio</div>
-              <div className={`tab ${activeTab==='watchlist'?'active':''}`} onClick={()=>setActiveTab('watchlist')}>Watchlist</div>
-              <div className={`tab ${activeTab==='backtest'?'active':''}`} onClick={()=>setActiveTab('backtest')}>Backtest</div>
-              <div className={`tab ${activeTab==='points'?'active':''}`} onClick={()=>setActiveTab('points')}>Points</div>
-            </div>
-            <div className="panel-body" style={{padding: activeTab==='trade'?16:0}}>
-              
-              {/* ORDERBOOK TAB */}
-              {activeTab === 'orderbook' && (
-                <div style={{display:'flex', width:'100%', height:'100%'}}>
-                  <div style={{flex:1, borderRight:'1px solid var(--border)'}}>
-                    <div style={{display:'flex', justifyContent:'space-between', padding:'4px 8px', fontSize:11, color:'var(--text-secondary)', borderBottom:'1px solid var(--border)'}}><span>Size</span><span>Price</span></div>
-                    {orderbook.asks.slice(-10).map((a, i) => (
-                      <div key={i} style={{display:'flex', justifyContent:'space-between', padding:'2px 8px', fontSize:12, position:'relative', cursor:'pointer'}} onClick={() => { setLimitPrice(a.price.toFixed(4)); setActiveTab('trade'); }}>
-                        <div style={{position:'absolute', right:0, top:0, bottom:0, width:`${(a.total/orderbook.asks[orderbook.asks.length-1].total)*100}%`, background:'#ef444422', zIndex:1}} />
-                        <span style={{zIndex:2}}>{a.size}</span><span style={{color:'#ef4444', zIndex:2}}>{a.price.toFixed(2)}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{flex:1}}>
-                    <div style={{display:'flex', justifyContent:'space-between', padding:'4px 8px', fontSize:11, color:'var(--text-secondary)', borderBottom:'1px solid var(--border)'}}><span>Price</span><span>Size</span></div>
-                    {orderbook.bids.slice(0,10).map((b, i) => (
-                      <div key={i} style={{display:'flex', justifyContent:'space-between', padding:'2px 8px', fontSize:12, position:'relative', cursor:'pointer'}} onClick={() => { setLimitPrice(b.price.toFixed(4)); setActiveTab('trade'); }}>
-                        <div style={{position:'absolute', left:0, top:0, bottom:0, width:`${(b.total/orderbook.bids[orderbook.bids.length-1].total)*100}%`, background:'#22c55e22', zIndex:1}} />
-                        <span style={{color:'#22c55e', zIndex:2}}>{b.price.toFixed(2)}</span><span style={{zIndex:2}}>{b.size}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+          {/* ROUNDS GRID */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+            {/* Bidding Card */}
+            {biddingRound && (
+              <div className="round-card">
+                 <div className="rc-header"><span>#{biddingRound.epoch}</span><span className="rc-badge bidding">BIDDING</span></div>
+                 <div style={{ margin: '16px 0', textAlign: 'center' }}>
+                   <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Current Pool</div>
+                   <div style={{ fontSize: 18, fontWeight: 'bold' }}>{fmt4(biddingRound.totalAmount)} zkLTC</div>
+                 </div>
+                 <div style={{ display: 'flex', gap: 8 }}>
+                   <button className="trade-btn bull" onClick={() => { setTradeSide('Bull'); setActivePrediction({ epoch: biddingRound.epoch, side: 'Bull', pool: getMult(biddingRound, 'Bull') }); setActiveTab('slip'); }}>Bull</button>
+                   <button className="trade-btn bear" onClick={() => { setTradeSide('Bear'); setActivePrediction({ epoch: biddingRound.epoch, side: 'Bear', pool: getMult(biddingRound, 'Bear') }); setActiveTab('slip'); }}>Bear</button>
+                 </div>
+              </div>
+            )}
+            {/* Live Card */}
+            {liveRound && (
+              <div className="round-card">
+                 <div className="rc-header"><span>#{liveRound.epoch}</span><span className="rc-badge live">LIVE</span></div>
+                 <div style={{ margin: '16px 0', textAlign: 'center' }}>
+                   <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Lock Price</div>
+                   <div style={{ fontSize: 16, fontWeight: 'bold' }}>${liveRound.lockPrice.toFixed(4)}</div>
+                   <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8 }}>Current Price</div>
+                   <div style={{ fontSize: 16, fontWeight: 'bold', color: ltcPrice > liveRound.lockPrice ? '#22c55e' : '#ef4444' }}>${ltcPrice.toFixed(4)}</div>
+                 </div>
+              </div>
+            )}
+            {/* Ended Card */}
+            {endedRound && (
+              <div className="round-card">
+                 <div className="rc-header"><span>#{endedRound.epoch}</span><span className="rc-badge ended">ENDED</span></div>
+                 <div style={{ margin: '12px 0', textAlign: 'center' }}>
+                   <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Lock: ${endedRound.lockPrice.toFixed(4)}</div>
+                   <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Close: ${endedRound.closePrice.toFixed(4)}</div>
+                   <div style={{ marginTop: 8, fontWeight: 'bold', color: endedRound.closePrice > endedRound.lockPrice ? '#22c55e' : '#ef4444' }}>
+                     {endedRound.closePrice > endedRound.lockPrice ? 'BULL WON' : 'BEAR WON'}
+                   </div>
+                 </div>
+                 {claimableEpochs.includes(endedRound.epoch) && (
+                   <button className="btn btn-primary" style={{ width: '100%' }} onClick={claimAll}>Claim Reward</button>
+                 )}
+              </div>
+            )}
+          </div>
+        </div>
 
-              {/* TRADE TAB */}
-              {activeTab === 'trade' && (
-                <div className="trade-panel">
-                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                    <div className="tabs" style={{border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden'}}>
-                      <div className={`tab ${tradeSide==='Bull'?'active':''}`} style={{padding:'4px 12px', background: tradeSide==='Bull'?'#22c55e22':'', color: tradeSide==='Bull'?'#22c55e':''}} onClick={()=>setTradeSide('Bull')}>BULL</div>
-                      <div className={`tab ${tradeSide==='Bear'?'active':''}`} style={{padding:'4px 12px', background: tradeSide==='Bear'?'#ef444422':'', color: tradeSide==='Bear'?'#ef4444':''}} onClick={()=>setTradeSide('Bear')}>BEAR</div>
+        {/* RIGHT COLUMN (Sidebar) */}
+        <div style={{ width: 380, borderLeft: '1px solid var(--border)', background: 'var(--bg-panel)', display: 'flex', flexDirection: 'column' }}>
+          <div className="tabs" style={{ padding: 0, margin: 0, borderBottom: '1px solid var(--border)', display: 'flex', flexWrap: 'wrap' }}>
+            {['slip', 'positions', 'chat', 'news', 'points', 'backtest'].map(t => (
+              <div key={t} className={`tab ${activeTab===t?'active':''}`} onClick={()=>setActiveTab(t)} style={{ flex: '1 1 30%', padding: '8px 4px', fontSize: 11, textTransform: 'capitalize' }}>
+                {t === 'positions' ? 'Portfolio' : t}
+              </div>
+            ))}
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: activeTab==='slip' ? 16 : 0 }}>
+            
+            {/* SLIP TAB */}
+            {activeTab === 'slip' && (
+              <div>
+                {!activePrediction ? (
+                  <div style={{ padding: 24, textAlign: 'center', background: 'var(--bg-input)', borderRadius: 8 }}>
+                    <div style={{ fontSize: 24, marginBottom: 8 }}>📝</div>
+                    <div style={{ marginBottom: 16 }}>Add a prediction to get started. Choose Bull or Bear on any active round.</div>
+                    <button className="btn btn-primary" onClick={() => setActiveTab('positions')}>View Active Rounds</button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ fontSize: 16, fontWeight: 'bold' }}>Round #{activePrediction.epoch}</div>
+                      <div style={{ background: activePrediction.side === 'Bull' ? '#22c55e22' : '#ef444422', color: activePrediction.side === 'Bull' ? '#22c55e' : '#ef4444', padding: '4px 12px', borderRadius: 4, fontWeight: 'bold' }}>{activePrediction.side}</div>
                     </div>
-                    <label style={{display:'flex', alignItems:'center', gap:6, fontSize:12}}><input type="checkbox" checked={isPaperMode} onChange={e=>setIsPaperMode(e.target.checked)}/> Paper Mode</label>
-                  </div>
-                  <div className="form-group">
-                    <label>Amount (zkLTC)</label>
-                    <input type="number" className="form-control" placeholder="0.0" value={tradeQty} onChange={e => setTradeQty(e.target.value)} />
-                    {isPaperMode && <div style={{fontSize:11, color:'var(--text-secondary)', marginTop:4, textAlign:'right'}}>Paper Balance: {paperBalance.toFixed(2)}</div>}
-                  </div>
-                  
-                  <div style={{background: 'var(--bg-input)', padding: 12, borderRadius: 4, fontSize: 12, display: 'flex', flexDirection: 'column', gap: 6}}>
-                    <div style={{display:'flex', justifyContent:'space-between'}}><span>Est. Multiplier:</span> <b>{tradeEst.mult}x</b></div>
-                    <div style={{display:'flex', justifyContent:'space-between'}}><span>Price Impact:</span> <b style={{color: parseFloat(tradeEst.impact) > 5 ? '#ef4444' : ''}}>{tradeEst.impact}%</b></div>
-                    <div style={{display:'flex', justifyContent:'space-between'}}><span>Est. Payout:</span> <b style={{color: '#22c55e'}}>{tradeEst.payout} zkLTC</b></div>
-                  </div>
+                    
+                    <div className="form-group">
+                      <label style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Wager Amount (zkLTC)</span>
+                        <label style={{ display:'flex', alignItems:'center', gap:4 }}><input type="checkbox" checked={isPaperMode} onChange={e=>setIsPaperMode(e.target.checked)}/> Paper Mode</label>
+                      </label>
+                      <input type="number" className="form-control" placeholder="0.0" value={tradeQty} onChange={e => setTradeQty(e.target.value)} />
+                      {isPaperMode && <div style={{fontSize:11, color:'var(--text-secondary)', marginTop:4, textAlign:'right'}}>Paper Balance: {paperBalance.toFixed(2)}</div>}
+                    </div>
+                    
+                    <div style={{background: 'var(--bg-input)', padding: 12, borderRadius: 4, fontSize: 12, display: 'flex', flexDirection: 'column', gap: 6}}>
+                      <div style={{display:'flex', justifyContent:'space-between'}}><span>Est. Multiplier:</span> <b>{tradeEst.mult}x</b></div>
+                      <div style={{display:'flex', justifyContent:'space-between'}}><span>Price Impact:</span> <b style={{color: parseFloat(tradeEst.impact) > 5 ? '#ef4444' : ''}}>{tradeEst.impact}%</b></div>
+                      <div style={{display:'flex', justifyContent:'space-between'}}><span>Est. Payout:</span> <b style={{color: '#22c55e'}}>{tradeEst.payout} zkLTC</b></div>
+                    </div>
 
-                  <button className={`trade-btn ${tradeSide.toLowerCase()}`} onClick={placeBet} disabled={loading}>
-                    {loading ? "Processing..." : `Place ${tradeSide} Bet`}
-                  </button>
+                    <button className={`trade-btn ${activePrediction.side.toLowerCase()}`} onClick={() => { if(isPaperMode) logPaperTrade(activePrediction.side, tradeQty); else placeBet(); }} disabled={loading}>
+                      {loading ? "Processing..." : "Confirm Prediction"}
+                    </button>
+                    
+                    <button className="btn btn-ghost" style={{ width: '100%', marginTop: 8 }} onClick={() => setActivePrediction(null)}>Clear Slip</button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* POSITIONS TAB */}
+            {activeTab === 'positions' && (
+              <div style={{display:'flex', flexDirection:'column', height:'100%'}}>
+                <div style={{display:'flex', borderBottom:'1px solid var(--border)'}}>
+                  <div className={`tab ${positionSubTab==='real'?'active':''}`} onClick={()=>setPositionSubTab('real')}>Real Trades</div>
+                  <div className={`tab ${positionSubTab==='paper'?'active':''}`} onClick={()=>setPositionSubTab('paper')}>Paper Trades</div>
                 </div>
-              )}
-
-              {/* POSITIONS TAB */}
-              {activeTab === 'positions' && (
-                <div style={{display:'flex', flexDirection:'column', height:'100%'}}>
-                  <div style={{display:'flex', borderBottom:'1px solid var(--border)'}}>
-                    <div className={`tab ${positionSubTab==='real'?'active':''}`} onClick={()=>setPositionSubTab('real')}>Real Trades</div>
-                    <div className={`tab ${positionSubTab==='paper'?'active':''}`} onClick={()=>setPositionSubTab('paper')}>Paper Trades</div>
-                  </div>
-                  
-                  {positionSubTab === 'real' && (
-                    <div style={{padding: 8, overflowY:'auto', flex: 1}}>
-                      {/* Summary Cards */}
-                      <div style={{display:'flex', gap:8, marginBottom:12}}>
-                        <div style={{flex:1, background:'var(--bg-input)', padding:8, borderRadius:4, textAlign:'center'}}>
-                          <div style={{fontSize:11, color:'var(--text-secondary)'}}>Claimable</div>
-                          <div style={{fontWeight:'bold', color:'#22c55e'}}>{claimableEpochs.length} Rounds</div>
-                        </div>
-                        <div style={{flex:1, background:'var(--bg-input)', padding:8, borderRadius:4, textAlign:'center'}}>
-                          <div style={{fontSize:11, color:'var(--text-secondary)'}}>Active</div>
-                          <div style={{fontWeight:'bold'}}>{Object.keys(userBets).filter(ep => Number(ep) >= currentEpoch - 1).length} Positions</div>
-                        </div>
+                
+                {positionSubTab === 'real' && (
+                  <div style={{padding: 8, overflowY:'auto', flex: 1}}>
+                    {/* Summary Cards */}
+                    <div style={{display:'flex', gap:8, marginBottom:12}}>
+                      <div style={{flex:1, background:'var(--bg-input)', padding:8, borderRadius:4, textAlign:'center'}}>
+                        <div style={{fontSize:11, color:'var(--text-secondary)'}}>Claimable</div>
+                        <div style={{fontWeight:'bold', color:'#22c55e'}}>{claimableEpochs.length} Rounds</div>
                       </div>
-                      
+                      <div style={{flex:1, background:'var(--bg-input)', padding:8, borderRadius:4, textAlign:'center'}}>
+                        <div style={{fontSize:11, color:'var(--text-secondary)'}}>Active</div>
+                        <div style={{fontWeight:'bold'}}>{Object.keys(userBets).filter(ep => Number(ep) >= currentEpoch - 1).length} Positions</div>
+                      </div>
+                    </div>
+                    
+                    <table className="table">
+                      <thead><tr><th>Epoch</th><th>Side</th><th>Amount</th><th>Status</th></tr></thead>
+                      <tbody>
+                        {Object.entries(userBets).reverse().map(([ep, b]) => (
+                          <tr key={ep}>
+                            <td>#{ep}</td>
+                            <td style={{color: b.position==='Bull'?'#22c55e':'#ef4444'}}>{b.position}</td>
+                            <td>{b.amount}</td>
+                            <td>{b.claimed ? 'Claimed' : claimableEpochs.includes(Number(ep)) ? <button className="btn btn-primary" style={{padding:'2px 6px', fontSize:10}} onClick={claimAll}>Claim</button> : 'Pending'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {positionSubTab === 'paper' && (
+                  <div style={{display:'flex', flexDirection:'column', height:'100%'}}>
+                    <div style={{padding: 8, borderBottom: '1px solid var(--border)', display:'flex', gap: 8, alignItems:'center', flexWrap: 'wrap'}}>
+                      {['All','Open','Win','Loss','Cancel'].map(f => (
+                        <span key={f} style={{fontSize: 11, padding: '2px 8px', borderRadius: 12, background: posFilter===f ? '#3b82f6' : 'var(--bg-input)', color: posFilter===f ? 'white' : 'var(--text-primary)', cursor: 'pointer'}} onClick={() => setPosFilter(f)}>{f}</span>
+                      ))}
+                      <div style={{marginLeft: 'auto', display: 'flex', gap: 4}}>
+                         <button className="btn btn-ghost" style={{fontSize: 10, border: '1px solid var(--border)'}} onClick={exportCSV}>📥 CSV</button>
+                         <button className="btn btn-ghost" style={{fontSize: 10, color: '#ef4444', border: '1px solid #ef4444'}} onClick={clearPaperHistory}>Clear</button>
+                      </div>
+                    </div>
+                    <div style={{overflowY:'auto', flex: 1, padding: 8}}>
                       <table className="table">
-                        <thead><tr><th>Epoch</th><th>Side</th><th>Amount</th><th>Status</th></tr></thead>
+                        <thead><tr><th>Round</th><th>Side</th><th>Amount</th><th>Result</th><th>PnL</th></tr></thead>
                         <tbody>
-                          {Object.entries(userBets).reverse().map(([ep, b]) => (
-                            <tr key={ep}>
-                              <td>#{ep}</td>
-                              <td style={{color: b.position==='Bull'?'#22c55e':'#ef4444'}}>{b.position}</td>
-                              <td>{b.amount}</td>
-                              <td>{b.claimed ? 'Claimed' : claimableEpochs.includes(Number(ep)) ? <button className="btn btn-primary" style={{padding:'2px 6px', fontSize:10}} onClick={claimAll}>Claim</button> : 'Pending'}</td>
+                          {paperTrades.filter(t => posFilter === 'All' || (posFilter === 'Open' && t.status === 'Open') || t.result === posFilter).slice().reverse().map(t => (
+                            <tr key={t.id}>
+                              <td>#{t.epoch}</td>
+                              <td style={{color: t.side==='Bull'?'#22c55e':'#ef4444'}}>{t.side}</td>
+                              <td>{t.amount}</td>
+                              <td>{t.status==='Open' ? '⏳' : t.result==='Win' ? '🏆' : t.result==='Loss' ? '💀' : '➖'}</td>
+                              <td style={{color: t.pnl > 0 ? '#22c55e' : t.pnl < 0 ? '#ef4444' : ''}}>{t.pnl ? `${t.pnl.toFixed(1)}%` : '—'}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
-                  )}
+                  </div>
+                )}
+              </div>
+            )}
 
-                  {positionSubTab === 'paper' && (
-                    <div style={{display:'flex', flexDirection:'column', height:'100%'}}>
-                      <div style={{padding: 8, borderBottom: '1px solid var(--border)', display:'flex', gap: 8, alignItems:'center', flexWrap: 'wrap'}}>
-                        {['All','Open','Win','Loss','Cancel'].map(f => (
-                          <span key={f} style={{fontSize: 11, padding: '2px 8px', borderRadius: 12, background: posFilter===f ? '#3b82f6' : 'var(--bg-input)', color: posFilter===f ? 'white' : 'var(--text-primary)', cursor: 'pointer'}} onClick={() => setPosFilter(f)}>{f}</span>
-                        ))}
-                        <div style={{marginLeft: 'auto', display: 'flex', gap: 4}}>
-                           <button className="btn btn-ghost" style={{fontSize: 10, border: '1px solid var(--border)'}} onClick={exportCSV}>📥 CSV</button>
-                           <button className="btn btn-ghost" style={{fontSize: 10, color: '#ef4444', border: '1px solid #ef4444'}} onClick={clearPaperHistory}>Clear</button>
+            {/* CHAT TAB */}
+            {activeTab === 'chat' && (
+              <div style={{ display:'flex', flexDirection:'column', height:'100%' }}>
+                <div style={{ flex: 1, padding: 8, overflowY: 'auto', display:'flex', flexDirection:'column', gap: 12 }} ref={chatBodyRef}>
+                  {chatMessages.map(m => (
+                    <div key={m.id} style={{fontSize: 12, lineHeight: 1.4}}>
+                      <div style={{display:'flex', alignItems:'center', gap:4, marginBottom: 2}}>
+                        <span>{m.avatar}</span>
+                        <span style={{fontWeight:'bold', color: m.color}}>{m.user}</span>
+                        {m.badge && <span style={{fontSize:9, background:'var(--bg-input)', padding:'1px 4px', borderRadius:2}}>{m.badge}</span>}
+                        <span style={{fontSize:10, color:'var(--text-secondary)', marginLeft:'auto'}}>{m.time}</span>
+                      </div>
+                      <div style={{color:'var(--text-primary)'}}>{m.text}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{padding: 8, borderTop: '1px solid var(--border)', display:'flex', gap:4}}>
+                  <input type="text" className="form-control" placeholder="Type a message..." value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendChat()} />
+                  <button className="btn btn-primary" onClick={sendChat}>Send</button>
+                </div>
+              </div>
+            )}
+
+            {/* NEWS TAB */}
+            {activeTab === 'news' && (
+              <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                <div style={{ padding: 8, borderBottom: '1px solid var(--border)', display: 'flex', gap: 4, overflowX: 'auto' }}>
+                  {['all','litvm','litecoin','market','defi'].map(c => (
+                    <div key={c} className={`tab ${newsCategory===c ? 'active' : ''}`} style={{padding: '4px 8px', fontSize: 11, borderRadius: 12, background: newsCategory===c ? '#3b82f6' : 'var(--bg-input)', color: newsCategory===c ? 'white' : 'var(--text-primary)', cursor: 'pointer', whiteSpace: 'nowrap'}} onClick={() => setNewsCategory(c)}>
+                      {c.toUpperCase()}
+                    </div>
+                  ))}
+                </div>
+                <div style={{ padding: 8, overflowY: 'auto', flex: 1 }}>
+                  {newsItems.filter(n => newsCategory === 'all' || n.tag === newsCategory).map(n => (
+                    <div style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }} key={n.id}>
+                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
+                        <span style={{ fontSize: 10, padding: '2px 4px', borderRadius: 2, background: 'var(--bg-input)', color: 'var(--text-secondary)' }}>{n.tagLabel}</span>
+                        <div style={{display:'flex', gap:4}}>
+                          <span className="icon-btn" onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(n.title)}`, '_blank')} title="Search on Google">🔍</span>
+                          <span className="icon-btn" onClick={() => window.open(`https://twitter.com/search?q=${encodeURIComponent(n.title)}&src=typed_query`, '_blank')} title="Search on Twitter/X">🐦</span>
                         </div>
                       </div>
-                      <div style={{overflowY:'auto', flex: 1, padding: 8}}>
-                        <table className="table">
-                          <thead><tr><th>Round</th><th>Side</th><th>Amount</th><th>Result</th><th>PnL</th></tr></thead>
-                          <tbody>
-                            {paperTrades.filter(t => posFilter === 'All' || (posFilter === 'Open' && t.status === 'Open') || t.result === posFilter).slice().reverse().map(t => (
-                              <tr key={t.id}>
-                                <td>#{t.epoch}</td>
-                                <td style={{color: t.side==='Bull'?'#22c55e':'#ef4444'}}>{t.side}</td>
-                                <td>{t.amount}</td>
-                                <td>{t.status==='Open' ? '⏳' : t.result==='Win' ? '🏆' : t.result==='Loss' ? '💀' : '➖'}</td>
-                                <td style={{color: t.pnl > 0 ? '#22c55e' : t.pnl < 0 ? '#ef4444' : ''}}>{t.pnl ? `${t.pnl.toFixed(1)}%` : '—'}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                      <div
+                        style={{ fontSize: 13, margin: '4px 0', cursor: n.url ? 'pointer' : 'default' }}
+                        onClick={() => n.url && window.open(n.url, '_blank')}
+                        title={n.url ? "Read full article" : ""}
+                      >{n.title}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'flex', gap: 4 }}><span>{n.source}</span>·<span>{n.time}</span></div>
                     </div>
-                  )}
+                  ))}
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* WATCHLIST TAB */}
-              {activeTab === 'watchlist' && (
-                <div style={{padding: 8, display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto', height: '100%'}}>
-                  {watchlist.size === 0 ? (
-                    <div style={{textAlign: 'center', color: 'var(--text-secondary)', marginTop: 20}}>Star rounds to track them here</div>
-                  ) : (
-                    Array.from(watchlist).sort((a,b)=>b-a).map(ep => <RoundCard key={ep} r={rounds[ep]} type={ep === currentEpoch ? "bidding" : ep === currentEpoch - 1 ? "live" : "ended"} />)
-                  )}
-                </div>
-              )}
-
-              {/* POINTS TAB */}
-              {activeTab === 'points' && (
-                <div style={{padding: 16, display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto', height: '100%'}}>
-                  <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', background:'var(--bg-input)', padding:16, borderRadius:8}}>
-                    <div>
-                      <div style={{fontSize: 12, color: 'var(--text-secondary)'}}>Your LitePoints (LPs)</div>
-                      <div style={{fontSize: 24, fontWeight: 'bold'}}>{points}</div>
-                    </div>
-                    <div style={{textAlign:'right'}}>
-                      <div style={{fontSize: 12, color: 'var(--text-secondary)'}}>Tier</div>
-                      <div style={{fontSize: 16, fontWeight: 'bold', color: currentTier.color, textShadow: currentTier.shadow}}>{currentTier.name}</div>
-                    </div>
-                  </div>
-                  {currentTier.next && (
-                    <div>
-                      <div style={{display:'flex', justifyContent:'space-between', fontSize:11, marginBottom:4}}>
-                        <span>Progress to {getTier(currentTier.next).name}</span>
-                        <span>{points} / {currentTier.next}</span>
-                      </div>
-                      <div style={{width:'100%', height:6, background:'var(--bg-input)', borderRadius:3, overflow:'hidden'}}>
-                        <div style={{height:'100%', width:`${Math.min(100, ((points - currentTier.min) / (currentTier.next - currentTier.min)) * 100)}%`, background: getTier(currentTier.next).color}} />
-                      </div>
-                    </div>
-                  )}
-
-                  <button className="btn btn-primary" onClick={handleDailyCheckIn} disabled={lastCheckIn && (new Date().getTime() - parseInt(lastCheckIn)) < 86400000} style={{padding: 12, width: '100%'}}>
-                    {lastCheckIn && (new Date().getTime() - parseInt(lastCheckIn)) < 86400000 ? 'Check back tomorrow' : '🎁 Daily Check-In (+50 LPs)'}
-                  </button>
-
+            {/* POINTS TAB */}
+            {activeTab === 'points' && (
+              <div style={{padding: 16, display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto', height: '100%'}}>
+                <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', background:'var(--bg-input)', padding:16, borderRadius:8}}>
                   <div>
-                    <div style={{fontSize: 12, fontWeight: 'bold', marginBottom: 8}}>Social Tasks</div>
-                    <div style={{display:'flex', flexDirection:'column', gap:8}}>
-                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', background:'var(--bg-input)', padding:'8px 12px', borderRadius:4}}>
-                        <span style={{fontSize:12}}>Follow us on X</span>
-                        <button className="btn btn-secondary" style={{fontSize:10}} disabled={completedTasks.includes('twitter')} onClick={() => handleSocialTask('twitter', 100)}>{completedTasks.includes('twitter') ? 'Done' : '+100 LPs'}</button>
-                      </div>
-                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', background:'var(--bg-input)', padding:'8px 12px', borderRadius:4}}>
-                        <span style={{fontSize:12}}>Join Telegram</span>
-                        <button className="btn btn-secondary" style={{fontSize:10}} disabled={completedTasks.includes('telegram')} onClick={() => handleSocialTask('telegram', 100)}>{completedTasks.includes('telegram') ? 'Done' : '+100 LPs'}</button>
-                      </div>
-                    </div>
+                    <div style={{fontSize: 12, color: 'var(--text-secondary)'}}>Your LitePoints (LPs)</div>
+                    <div style={{fontSize: 24, fontWeight: 'bold'}}>{points}</div>
                   </div>
-
+                  <div style={{textAlign:'right'}}>
+                    <div style={{fontSize: 12, color: 'var(--text-secondary)'}}>Tier</div>
+                    <div style={{fontSize: 16, fontWeight: 'bold', color: currentTier.color, textShadow: currentTier.shadow}}>{currentTier.name}</div>
+                  </div>
+                </div>
+                {currentTier.next && (
                   <div>
-                    <div style={{fontSize: 12, fontWeight: 'bold', marginBottom: 8}}>Leaderboard</div>
-                    <div style={{display:'flex', flexDirection:'column', gap:4}}>
-                      {[
-                        {rank:1, addr:'0xTrader...a8f4', pts:8540, tier:'Diamond', color:'#06b6d4'},
-                        {rank:2, addr:'0xWhale...b1c9', pts:6200, tier:'Diamond', color:'#06b6d4'},
-                        {rank:3, addr:'0xAlpha...d3e2', pts:4850, tier:'Gold', color:'#eab308'},
-                        {rank:4, addr:'0xSniper...f7a1', pts:3920, tier:'Gold', color:'#eab308'},
-                        {rank:5, addr:'0xChad...9c4b', pts:2150, tier:'Gold', color:'#eab308'}
-                      ].map(l => (
-                        <div key={l.rank} style={{display:'flex', justifyContent:'space-between', padding:'4px 8px', fontSize:12, borderBottom:'1px solid var(--border)'}}>
-                          <span style={{width: 20}}>{l.rank}.</span>
-                          <span style={{flex:1}}>{l.addr}</span>
-                          <span style={{color:l.color, marginRight: 8, fontSize:10}}>{l.tier}</span>
-                          <span style={{fontWeight:'bold'}}>{l.pts} LPs</span>
-                        </div>
-                      ))}
-                      {points > 0 && (
-                        <div style={{display:'flex', justifyContent:'space-between', padding:'4px 8px', fontSize:12, marginTop: 4, background:'var(--bg-input)', borderRadius:4, fontWeight:'bold'}}>
-                          <span style={{width: 20}}>...</span>
-                          <span style={{flex:1}}>You ({account ? shortAddr(account) : 'Connected'})</span>
-                          <span style={{color:currentTier.color, marginRight: 8, fontSize:10}}>{currentTier.name}</span>
-                          <span>{points} LPs</span>
-                        </div>
-                      )}
+                    <div style={{display:'flex', justifyContent:'space-between', fontSize:11, marginBottom:4}}>
+                      <span>Progress to {getTier(currentTier.next).name}</span>
+                      <span>{points} / {currentTier.next}</span>
+                    </div>
+                    <div style={{width:'100%', height:6, background:'var(--bg-input)', borderRadius:3, overflow:'hidden'}}>
+                      <div style={{height:'100%', width:`${Math.min(100, ((points - currentTier.min) / (currentTier.next - currentTier.min)) * 100)}%`, background: getTier(currentTier.next).color}} />
+                    </div>
+                  </div>
+                )}
+
+                <button className="btn btn-primary" onClick={handleDailyCheckIn} disabled={lastCheckIn && (new Date().getTime() - parseInt(lastCheckIn)) < 86400000} style={{padding: 12, width: '100%'}}>
+                  {lastCheckIn && (new Date().getTime() - parseInt(lastCheckIn)) < 86400000 ? 'Check back tomorrow' : '🎁 Daily Check-In (+50 LPs)'}
+                </button>
+
+                <div>
+                  <div style={{fontSize: 12, fontWeight: 'bold', marginBottom: 8}}>Social Tasks</div>
+                  <div style={{display:'flex', flexDirection:'column', gap:8}}>
+                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', background:'var(--bg-input)', padding:'8px 12px', borderRadius:4}}>
+                      <span style={{fontSize:12}}>Follow us on X</span>
+                      <button className="btn btn-secondary" style={{fontSize:10}} disabled={completedTasks.includes('twitter')} onClick={() => handleSocialTask('twitter', 100)}>{completedTasks.includes('twitter') ? 'Done' : '+100 LPs'}</button>
+                    </div>
+                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', background:'var(--bg-input)', padding:'8px 12px', borderRadius:4}}>
+                      <span style={{fontSize:12}}>Join Telegram</span>
+                      <button className="btn btn-secondary" style={{fontSize:10}} disabled={completedTasks.includes('telegram')} onClick={() => handleSocialTask('telegram', 100)}>{completedTasks.includes('telegram') ? 'Done' : '+100 LPs'}</button>
                     </div>
                   </div>
                 </div>
-              )}
 
-              {/* BACKTEST TAB */}
-              {activeTab === 'backtest' && (
-                <div style={{display:'flex', flexDirection:'column', height:'100%'}}>
-                  <div style={{padding: 8, borderBottom: '1px solid var(--border)'}}>
-                    <div style={{fontSize: 12, marginBottom: 8}}>Select Strategy:</div>
-                    <div style={{display:'flex', gap:4, flexWrap:'wrap'}}>
-                      <button className="btn btn-secondary" style={{fontSize:11}} onClick={() => runBacktest('always_bull')}>Always Bull</button>
-                      <button className="btn btn-secondary" style={{fontSize:11}} onClick={() => runBacktest('always_bear')}>Always Bear</button>
-                      <button className="btn btn-secondary" style={{fontSize:11}} onClick={() => runBacktest('momentum')}>Momentum</button>
-                      <button className="btn btn-secondary" style={{fontSize:11}} onClick={() => runBacktest('contrarian')}>Contrarian</button>
-                    </div>
-                  </div>
-                  {isBacktesting ? <div style={{padding: 20, textAlign: 'center'}}>Running backtest over last 50 rounds...</div> :
-                   !backtestResults ? <div style={{padding: 20, textAlign: 'center', color: 'var(--text-secondary)'}}>Run a backtest to see equity curve</div> : (
-                    <div style={{flex: 1, display: 'flex', flexDirection: 'column'}}>
-                      <div style={{display: 'flex', padding: 8, gap: 8}}>
-                        <div style={{flex:1, background:'var(--bg-input)', padding:8, borderRadius:4, textAlign:'center'}}>
-                           <div style={{fontSize:11, color:'var(--text-secondary)'}}>Final Balance</div>
-                           <div style={{fontWeight:'bold', color: backtestResults.finalBalance > settings.paperStartBalance ? '#22c55e' : '#ef4444'}}>${backtestResults.finalBalance.toFixed(2)}</div>
-                        </div>
-                        <div style={{flex:1, background:'var(--bg-input)', padding:8, borderRadius:4, textAlign:'center'}}>
-                           <div style={{fontSize:11, color:'var(--text-secondary)'}}>Max Drawdown</div>
-                           <div style={{fontWeight:'bold', color: '#ef4444'}}>{backtestResults.maxDrawdown.toFixed(1)}%</div>
-                        </div>
+                <div>
+                  <div style={{fontSize: 12, fontWeight: 'bold', marginBottom: 8}}>Leaderboard</div>
+                  <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                    {[
+                      {rank:1, addr:'0xTrader...a8f4', pts:8540, tier:'Diamond', color:'#06b6d4'},
+                      {rank:2, addr:'0xWhale...b1c9', pts:6200, tier:'Diamond', color:'#06b6d4'},
+                      {rank:3, addr:'0xAlpha...d3e2', pts:4850, tier:'Gold', color:'#eab308'},
+                      {rank:4, addr:'0xSniper...f7a1', pts:3920, tier:'Gold', color:'#eab308'},
+                      {rank:5, addr:'0xChad...9c4b', pts:2150, tier:'Gold', color:'#eab308'}
+                    ].map(l => (
+                      <div key={l.rank} style={{display:'flex', justifyContent:'space-between', padding:'4px 8px', fontSize:12, borderBottom:'1px solid var(--border)'}}>
+                        <span style={{width: 20}}>{l.rank}.</span>
+                        <span style={{flex:1}}>{l.addr}</span>
+                        <span style={{color:l.color, marginRight: 8, fontSize:10}}>{l.tier}</span>
+                        <span style={{fontWeight:'bold'}}>{l.pts} LPs</span>
                       </div>
-                      <div style={{flex: 1, minHeight: 250, padding: 8, position: 'relative'}} ref={backtestChartContainerRef}></div>
-                    </div>
-                  )}
+                    ))}
+                    {points > 0 && (
+                      <div style={{display:'flex', justifyContent:'space-between', padding:'4px 8px', fontSize:12, marginTop: 4, background:'var(--bg-input)', borderRadius:4, fontWeight:'bold'}}>
+                        <span style={{width: 20}}>...</span>
+                        <span style={{flex:1}}>You ({account ? shortAddr(account) : 'Connected'})</span>
+                        <span style={{color:currentTier.color, marginRight: 8, fontSize:10}}>{currentTier.name}</span>
+                        <span>{points} LPs</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
+              </div>
+            )}
 
-            </div>
+            {/* BACKTEST TAB */}
+            {activeTab === 'backtest' && (
+              <div style={{display:'flex', flexDirection:'column', height:'100%'}}>
+                <div style={{padding: 8, borderBottom: '1px solid var(--border)'}}>
+                  <div style={{fontSize: 12, marginBottom: 8}}>Select Strategy:</div>
+                  <div style={{display:'flex', gap:4, flexWrap:'wrap'}}>
+                    <button className="btn btn-secondary" style={{fontSize:11}} onClick={() => runBacktest('always_bull')}>Always Bull</button>
+                    <button className="btn btn-secondary" style={{fontSize:11}} onClick={() => runBacktest('always_bear')}>Always Bear</button>
+                    <button className="btn btn-secondary" style={{fontSize:11}} onClick={() => runBacktest('momentum')}>Momentum</button>
+                    <button className="btn btn-secondary" style={{fontSize:11}} onClick={() => runBacktest('contrarian')}>Contrarian</button>
+                  </div>
+                </div>
+                {isBacktesting ? <div style={{padding: 20, textAlign: 'center'}}>Running backtest over last 50 rounds...</div> :
+                 !backtestResults ? <div style={{padding: 20, textAlign: 'center', color: 'var(--text-secondary)'}}>Run a backtest to see equity curve</div> : (
+                  <div style={{flex: 1, display: 'flex', flexDirection: 'column'}}>
+                    <div style={{display: 'flex', padding: 8, gap: 8}}>
+                      <div style={{flex:1, background:'var(--bg-input)', padding:8, borderRadius:4, textAlign:'center'}}>
+                         <div style={{fontSize:11, color:'var(--text-secondary)'}}>Final Balance</div>
+                         <div style={{fontWeight:'bold', color: backtestResults.finalBalance > settings.paperStartBalance ? '#22c55e' : '#ef4444'}}>${backtestResults.finalBalance.toFixed(2)}</div>
+                      </div>
+                      <div style={{flex:1, background:'var(--bg-input)', padding:8, borderRadius:4, textAlign:'center'}}>
+                         <div style={{fontSize:11, color:'var(--text-secondary)'}}>Max Drawdown</div>
+                         <div style={{fontWeight:'bold', color: '#ef4444'}}>{backtestResults.maxDrawdown.toFixed(1)}%</div>
+                      </div>
+                    </div>
+                    <div style={{flex: 1, minHeight: 250, padding: 8, position: 'relative'}} ref={backtestChartContainerRef}></div>
+                  </div>
+                )}
+              </div>
+            )}
+
           </div>
-
         </div>
       </div>
       
