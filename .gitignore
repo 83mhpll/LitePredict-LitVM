@@ -13,3 +13,8 @@ frontend/dist/
 frontend/.eslintcache
 frontend/src/assets/
 .env.local
+
+# Logs
+*.log
+anvil.log
+keeper.log
