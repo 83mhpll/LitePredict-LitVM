@@ -141,6 +141,18 @@ export default function App() {
   const [limitPrice, setLimitPrice] = useState("");
   const [activeTab, setActiveTab] = useState("orderbook"); // orderbook | trade | positions
 
+  /* ── Paper trading state ── */
+  const [isPaperMode, setIsPaperMode] = useState(false);
+  const [paperTrades, setPaperTrades] = useState(() => {
+    try {
+      const saved = localStorage.getItem("lp_paper_trades");
+      return saved ? JSON.parse(saved) : [];
+    } catch (_) {
+      return [];
+    }
+  });
+  const [positionSubTab, setPositionSubTab] = useState("real"); // "real" | "paper"
+
   /* ── Chat ── */
   const [chatMessages, setChatMessages] = useState(INITIAL_CHAT);
   const [chatInput, setChatInput] = useState("");
@@ -191,53 +203,164 @@ export default function App() {
     return () => { ro.disconnect(); chart.remove(); };
   }, []);
 
-  /* ═══ Price simulation + chart update ═══ */
+  // Fetch historical candles from Binance (1-minute bars)
+  const fetchBinanceKlines = async () => {
+    try {
+      const res = await fetch("https://api.binance.com/api/v3/klines?symbol=LTCUSDT&interval=1m&limit=180");
+      if (!res.ok) throw new Error("Binance API error");
+      const data = await res.json();
+      const mapped = data.map(item => ({
+        time: Math.floor(item[0] / 1000),
+        open: parseFloat(item[1]),
+        high: parseFloat(item[2]),
+        low: parseFloat(item[3]),
+        close: parseFloat(item[4])
+      }));
+      candlesDataRef.current = mapped;
+      if (mapped.length > 0) {
+        const lastPrice = mapped[mapped.length - 1].close;
+        setLtcPrice(lastPrice);
+        prevPriceRef.current = lastPrice;
+      }
+      return mapped;
+    } catch (err) {
+      console.warn("Failed to fetch Binance klines, using fallback local candles:", err);
+      return null;
+    }
+  };
+
+  /* ═══ Real-time Binance Price Feed + Chart update ═══ */
   useEffect(() => {
-    const tick = setInterval(() => {
-      setLtcPrice(prev => {
-        const drift = (Math.random() - 0.49) * 0.08;
-        const newP = +(prev + drift).toFixed(4);
-        if (newP > prev) setPriceDir("up");
-        else if (newP < prev) setPriceDir("down");
-        else setPriceDir("same");
-        prevPriceRef.current = newP;
+    let ws;
+    let fallbackInterval;
 
-        // Update current candle bar (floor to 10s to group ticks)
-        if (candleSeriesRef.current) {
-          const barTime = Math.floor(Date.now() / 10000) * 10; // 10-second bars
-          const last = candlesDataRef.current[candlesDataRef.current.length - 1];
-          if (last && last.time === barTime) {
-            // Update existing bar
-            const updated = {
-              time: barTime,
-              open: last.open,
-              high: Math.max(last.high, newP),
-              low: Math.min(last.low, newP),
-              close: newP
-            };
-            candlesDataRef.current[candlesDataRef.current.length - 1] = updated;
-            try { candleSeriesRef.current.update(updated); } catch (_) {}
-          } else {
-            // New bar
-            const open = last ? last.close : newP;
-            const newBar = {
-              time: barTime,
-              open,
-              high: Math.max(open, newP),
-              low: Math.min(open, newP),
-              close: newP
-            };
-            candlesDataRef.current = [...candlesDataRef.current, newBar];
-            try { candleSeriesRef.current.update(newBar); } catch (_) {}
-          }
+    const initKlinesAndSocket = async () => {
+      // 1. Fetch initial kline history
+      const initialData = await fetchBinanceKlines();
+      if (initialData && candleSeriesRef.current) {
+        candleSeriesRef.current.setData(initialData);
+        try { chartRef.current.timeScale().fitContent(); } catch(_) {}
+      }
+
+      // 2. Setup real-time WebSocket connection
+      const connectSocket = () => {
+        try {
+          ws = new WebSocket("wss://stream.binance.com:9443/ws/ltcusdt@kline_1m");
+          
+          ws.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            if (msg && msg.k) {
+              const k = msg.k;
+              const newP = parseFloat(k.c);
+              
+              setLtcPrice(prev => {
+                if (newP > prev) setPriceDir("up");
+                else if (newP < prev) setPriceDir("down");
+                else setPriceDir("same");
+                return newP;
+              });
+              prevPriceRef.current = newP;
+
+              // Update chart candle
+              if (candleSeriesRef.current) {
+                const candle = {
+                  time: Math.floor(k.t / 1000),
+                  open: parseFloat(k.o),
+                  high: parseFloat(k.h),
+                  low: parseFloat(k.l),
+                  close: newP
+                };
+                try {
+                  candleSeriesRef.current.update(candle);
+                  const last = candlesDataRef.current[candlesDataRef.current.length - 1];
+                  if (last && last.time === candle.time) {
+                    candlesDataRef.current[candlesDataRef.current.length - 1] = candle;
+                  } else {
+                    candlesDataRef.current = [...candlesDataRef.current, candle];
+                  }
+                } catch (_) {}
+              }
+
+              // Update orderbook
+              setOrderbook(generateOrderbook(newP));
+            }
+          };
+
+          ws.onerror = (err) => {
+            console.warn("Binance WebSocket error:", err);
+            startPollingFallback();
+          };
+
+          ws.onclose = () => {
+            console.log("Binance WebSocket closed, retrying or falling back to REST");
+            startPollingFallback();
+          };
+        } catch (e) {
+          startPollingFallback();
         }
-        return newP;
-      });
+      };
 
-      // Update orderbook
-      setOrderbook(generateOrderbook(prevPriceRef.current));
-    }, 2000);
-    return () => clearInterval(tick);
+      const startPollingFallback = () => {
+        if (fallbackInterval) return; // already polling
+        console.log("Starting REST fallback polling...");
+        fallbackInterval = setInterval(async () => {
+          try {
+            const res = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=LTCUSDT");
+            const data = await res.json();
+            const newP = parseFloat(data.price);
+
+            setLtcPrice(prev => {
+              if (newP > prev) setPriceDir("up");
+              else if (newP < prev) setPriceDir("down");
+              else setPriceDir("same");
+              return newP;
+            });
+            prevPriceRef.current = newP;
+
+            // Update chart candle (synthesise local 1m bar)
+            if (candleSeriesRef.current) {
+              const barTime = Math.floor(Date.now() / 60000) * 60; // 1-minute bars
+              const last = candlesDataRef.current[candlesDataRef.current.length - 1];
+              if (last && last.time === barTime) {
+                const updated = {
+                  time: barTime,
+                  open: last.open,
+                  high: Math.max(last.high, newP),
+                  low: Math.min(last.low, newP),
+                  close: newP
+                };
+                candlesDataRef.current[candlesDataRef.current.length - 1] = updated;
+                try { candleSeriesRef.current.update(updated); } catch (_) {}
+              } else {
+                const open = last ? last.close : newP;
+                const newBar = {
+                  time: barTime,
+                  open,
+                  high: Math.max(open, newP),
+                  low: Math.min(open, newP),
+                  close: newP
+                };
+                candlesDataRef.current = [...candlesDataRef.current, newBar];
+                try { candleSeriesRef.current.update(newBar); } catch (_) {}
+              }
+            }
+
+            setOrderbook(generateOrderbook(newP));
+          } catch (e) {
+            console.error("REST fallback fetch failed:", e);
+          }
+        }, 2000);
+      };
+
+      connectSocket();
+    };
+
+    initKlinesAndSocket();
+
+    return () => {
+      if (ws) ws.close();
+      if (fallbackInterval) clearInterval(fallbackInterval);
+    };
   }, []);
 
   /* ═══ Web3 Init ═══ */
@@ -369,6 +492,110 @@ export default function App() {
     } catch(e) { toast("Claim failed", "error"); }
     setLoading(false);
   };
+
+  /* ═══ Paper Trading Helpers ═══ */
+  const logPaperTrade = (side, amount) => {
+    if (!amount || parseFloat(amount) <= 0) {
+      toast("Enter a valid amount", "error");
+      return;
+    }
+    const newTrade = {
+      id: Date.now(),
+      epoch: currentEpoch,
+      side,
+      amount: parseFloat(amount),
+      entryPrice: ltcPrice,
+      status: "Open",
+      lockTimestamp: biddingRound ? biddingRound.lockTimestamp : Math.floor(Date.now() / 1000) + 300,
+      closeTimestamp: biddingRound ? biddingRound.closeTimestamp : Math.floor(Date.now() / 1000) + 600,
+      result: null,
+      pnl: 0,
+      payout: 0,
+      closePrice: 0,
+      lockPrice: 0
+    };
+    const updated = [...paperTrades, newTrade];
+    setPaperTrades(updated);
+    localStorage.setItem("lp_paper_trades", JSON.stringify(updated));
+    setTradeQty("");
+    toast(`Paper bet placed: ${side} ${amount} zkLTC`, "success");
+  };
+
+  const clearPaperHistory = () => {
+    if (confirm("Are you sure you want to clear your Paper Trading history?")) {
+      setPaperTrades([]);
+      localStorage.removeItem("lp_paper_trades");
+      toast("Paper history cleared", "info");
+    }
+  };
+
+  const getPaperStats = () => {
+    const closed = paperTrades.filter(t => t.status === "Closed");
+    const total = paperTrades.length;
+    const wins = closed.filter(t => t.result === "Win").length;
+    const winRate = closed.length > 0 ? ((wins / closed.length) * 100).toFixed(1) : "0.0";
+    let totalPnL = 0;
+    closed.forEach(t => { totalPnL += t.pnl; });
+    return { total, winRate, totalPnL: totalPnL.toFixed(1) };
+  };
+
+  // Auto-settle paper trades when rounds finalize
+  useEffect(() => {
+    if (paperTrades.length === 0) return;
+    let changed = false;
+    const updated = paperTrades.map(trade => {
+      if (trade.status !== "Open") return trade;
+      const r = rounds[trade.epoch];
+      if (r && r.oracleCalled) {
+        changed = true;
+        if (r.cancelled) {
+          return {
+            ...trade,
+            status: "Closed",
+            result: "Cancel",
+            payout: trade.amount,
+            pnl: 0,
+            closePrice: r.closePrice,
+            lockPrice: r.lockPrice
+          };
+        }
+        const winner = r.closePrice > r.lockPrice ? "Bull" : "Bear";
+        if (trade.side === winner) {
+          const winPool = winner === "Bull" ? parseFloat(r.bullAmount) : parseFloat(r.bearAmount);
+          const rewardAmount = parseFloat(r.rewardAmount);
+          const payout = winPool > 0 ? (trade.amount * rewardAmount) / winPool : trade.amount;
+          const pnl = ((payout - trade.amount) / trade.amount) * 100;
+          toast(`🏆 Paper Trade Win! Round #${trade.epoch} paid +${pnl.toFixed(1)}%`, "success");
+          return {
+            ...trade,
+            status: "Closed",
+            result: "Win",
+            payout,
+            pnl,
+            closePrice: r.closePrice,
+            lockPrice: r.lockPrice
+          };
+        } else {
+          toast(`💀 Paper Trade Loss. Round #${trade.epoch} closed against you.`, "error");
+          return {
+            ...trade,
+            status: "Closed",
+            result: "Loss",
+            payout: 0,
+            pnl: -100,
+            closePrice: r.closePrice,
+            lockPrice: r.lockPrice
+          };
+        }
+      }
+      return trade;
+    });
+
+    if (changed) {
+      setPaperTrades(updated);
+      localStorage.setItem("lp_paper_trades", JSON.stringify(updated));
+    }
+  }, [rounds, paperTrades, toast]);
 
   /* ═══ Send Chat ═══ */
   const sendChat = () => {
@@ -556,7 +783,13 @@ export default function App() {
             </div>
             <div className="panel-body">
               {NEWS_ITEMS.map(n => (
-                <div className="news-item" key={n.id}>
+                <div 
+                  className="news-item" 
+                  key={n.id}
+                  onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(n.title)}`, '_blank')}
+                  style={{cursor:"pointer"}}
+                  title="Click to verify news on Google"
+                >
                   <span className={`news-tag ${n.tag}`}>{n.tagLabel}</span>
                   <div className="news-title">{n.title}</div>
                   <div className="news-meta">
@@ -702,8 +935,39 @@ export default function App() {
             {/* ── TRADE TAB ── */}
             {activeTab === "trade" && (
               <div className="trade-panel">
+                {/* Real / Paper Trading mode toggle */}
+                <div style={{display:"flex", background:"var(--bg-3)", margin:"10px 12px 0", borderRadius:"var(--radius-sm)", padding:2, gap:2}}>
+                  <button 
+                    onClick={() => setIsPaperMode(false)}
+                    style={{
+                      flex:1, border:"none", 
+                      background: !isPaperMode ? "var(--bg-2)" : "transparent", 
+                      color: !isPaperMode ? "var(--bull)" : "var(--text-muted)", 
+                      fontSize:11, padding:"6px 0", cursor:"pointer", borderRadius:3,
+                      fontWeight: 600, transition: "0.2s"
+                    }}
+                  >
+                    🔗 Real Trading (zkLTC)
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setIsPaperMode(true);
+                      toast("Paper Trading Mode enabled! Trades are simulated.", "info");
+                    }}
+                    style={{
+                      flex:1, border:"none", 
+                      background: isPaperMode ? "var(--bg-2)" : "transparent", 
+                      color: isPaperMode ? "#a78bfa" : "var(--text-muted)", 
+                      fontSize:11, padding:"6px 0", cursor:"pointer", borderRadius:3,
+                      fontWeight: 600, transition: "0.2s"
+                    }}
+                  >
+                    📝 Paper Trading (Practice)
+                  </button>
+                </div>
+
                 {/* Bull / Bear */}
-                <div className="trade-side-tabs">
+                <div className="trade-side-tabs" style={{marginTop:10}}>
                   <button
                     className={`trade-side-btn ${tradeSide==="Bull"?"bull-active":""}`}
                     onClick={() => setTradeSide("Bull")}
@@ -770,16 +1034,28 @@ export default function App() {
 
                 <button
                   className={`btn-trade ${tradeSide==="Bull"?"bull-trade":"bear-trade"}`}
-                  onClick={placeBet}
-                  disabled={loading || !account}
+                  onClick={() => isPaperMode ? logPaperTrade(tradeSide, tradeQty) : placeBet()}
+                  disabled={loading || (!isPaperMode && !account)}
+                  style={{
+                    background: isPaperMode 
+                      ? "#8b5cf6" 
+                      : (tradeSide === "Bull" ? "var(--bull)" : "var(--bear)"),
+                    border: isPaperMode ? "1px solid #a78bfa" : "none"
+                  }}
                 >
-                  {loading ? "Processing…" : !account ? "Connect Wallet" : `Enter ${tradeSide} — Round #${currentEpoch}`}
+                  {loading 
+                    ? "Processing…" 
+                    : isPaperMode 
+                      ? `Enter ${tradeSide} (Paper) — Round #${currentEpoch}` 
+                      : !account 
+                        ? "Connect Wallet" 
+                        : `Enter ${tradeSide} — Round #${currentEpoch}`}
                 </button>
 
                 {/* Current position */}
-                {userBets[currentEpoch] && (
+                {!isPaperMode && userBets[currentEpoch] && (
                   <div style={{margin:"0 12px 10px",padding:"10px 12px",background:"var(--bg-3)",borderRadius:"var(--radius-md)",border:"1px solid var(--border)"}}>
-                    <div style={{fontSize:11,color:"var(--text-muted)",marginBottom:4}}>Current Position</div>
+                    <div style={{fontSize:11,color:"var(--text-muted)",marginBottom:4}}>Current Position (Real)</div>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                       <span className={`chat-badge ${userBets[currentEpoch].position==="Bull"?"bull-badge":"bear-badge"}`} style={{fontSize:12,padding:"3px 8px"}}>
                         {userBets[currentEpoch].position}
@@ -788,45 +1064,144 @@ export default function App() {
                     </div>
                   </div>
                 )}
+
+                {isPaperMode && paperTrades.find(t => t.epoch === currentEpoch && t.status === "Open") && (
+                  <div style={{margin:"0 12px 10px",padding:"10px 12px",background:"var(--bg-3)",borderRadius:"var(--radius-md)",border:"1px solid var(--border)"}}>
+                    <div style={{fontSize:11,color:"var(--text-muted)",marginBottom:4}}>Current Position (Paper)</div>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <span className={`chat-badge ${paperTrades.find(t => t.epoch === currentEpoch && t.status === "Open").side==="Bull"?"bull-badge":"bear-badge"}`} style={{fontSize:12,padding:"3px 8px"}}>
+                        {paperTrades.find(t => t.epoch === currentEpoch && t.status === "Open").side}
+                      </span>
+                      <span style={{fontFamily:"monospace",fontSize:12}}>{paperTrades.find(t => t.epoch === currentEpoch && t.status === "Open").amount} zkLTC</span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             {/* ── POSITIONS TAB ── */}
             {activeTab === "positions" && (
-              <div className="panel-body">
-                {Object.keys(userBets).length === 0 ? (
-                  <div className="empty-state" style={{height:"100%"}}>
-                    <span className="empty-icon">📋</span>
-                    <span className="empty-text">No open positions</span>
-                    <span style={{fontSize:11,color:"var(--text-muted)"}}>Place a Bull or Bear bet to start</span>
-                  </div>
-                ) : (
-                  <div>
-                    {Object.entries(userBets).map(([ep, bet]) => {
-                      const r = rounds[Number(ep)];
-                      const isClaim = claimableEpochs.includes(Number(ep));
-                      return (
-                        <div className="position-row" key={ep}>
-                          <span className="epoch-badge" style={{fontFamily:"monospace",fontSize:11,color:"var(--text-muted)"}}>#{ ep}</span>
-                          <div>
-                            <div style={{fontSize:11,fontWeight:600}}>{bet.amount} zkLTC</div>
-                            {r && r.oracleCalled && (
-                              <div style={{fontSize:10,color:"var(--text-muted)"}}>
-                                {r.lockPrice.toFixed(4)} → {r.closePrice.toFixed(4)}
-                              </div>
+              <div className="panel-body" style={{padding:0}}>
+                {/* Selector inside Positions tab */}
+                <div style={{display:"flex", background:"var(--bg-3)", margin:"8px 14px", borderRadius:"var(--radius-sm)", padding:2, gap:2}}>
+                  <button 
+                    onClick={() => setPositionSubTab("real")}
+                    style={{
+                      flex:1, border:"none", 
+                      background: positionSubTab === "real" ? "var(--bg-2)" : "transparent", 
+                      color: positionSubTab === "real" ? "var(--text-primary)" : "var(--text-muted)", 
+                      fontSize:11, padding:"6px 0", cursor:"pointer", borderRadius:3,
+                      fontWeight: 600, transition: "0.2s"
+                    }}
+                  >
+                    🔗 Real positions (zkLTC)
+                  </button>
+                  <button 
+                    onClick={() => setPositionSubTab("paper")}
+                    style={{
+                      flex:1, border:"none", 
+                      background: positionSubTab === "paper" ? "var(--bg-2)" : "transparent", 
+                      color: positionSubTab === "paper" ? "#a78bfa" : "var(--text-muted)", 
+                      fontSize:11, padding:"6px 0", cursor:"pointer", borderRadius:3,
+                      fontWeight: 600, transition: "0.2s"
+                    }}
+                  >
+                    📝 Paper Trades (Practice)
+                  </button>
+                </div>
+
+                {positionSubTab === "real" ? (
+                  Object.keys(userBets).length === 0 ? (
+                    <div className="empty-state" style={{height:"180px"}}>
+                      <span className="empty-icon">📋</span>
+                      <span className="empty-text">No zkLTC positions</span>
+                      <span style={{fontSize:11,color:"var(--text-muted)"}}>Place a real bet to start</span>
+                    </div>
+                  ) : (
+                    <div style={{padding:"0 14px 14px"}}>
+                      {Object.entries(userBets).map(([ep, bet]) => {
+                        const r = rounds[Number(ep)];
+                        const isClaim = claimableEpochs.includes(Number(ep));
+                        return (
+                          <div className="position-row" key={ep}>
+                            <span className="epoch-badge" style={{fontFamily:"monospace",fontSize:11,color:"var(--text-muted)"}}>#{ep}</span>
+                            <div>
+                              <div style={{fontSize:11,fontWeight:600}}>{bet.amount} zkLTC</div>
+                              {r && r.oracleCalled && (
+                                <div style={{fontSize:10,color:"var(--text-muted)"}}>
+                                  {r.lockPrice.toFixed(4)} → {r.closePrice.toFixed(4)}
+                                </div>
+                              )}
+                            </div>
+                            <span className={`chat-badge ${bet.position === "Bull" ? "bull-badge" : "bear-badge"}`}>{bet.position}</span>
+                            {isClaim ? (
+                              <button className="btn btn-primary" style={{fontSize:10,padding:"4px 8px"}} onClick={() => handleClaim([Number(ep)])}>Claim</button>
+                            ) : bet.claimed ? (
+                              <span style={{fontSize:10,color:"var(--text-muted)"}}>Claimed</span>
+                            ) : (
+                              <span style={{fontSize:10,color:"var(--text-muted)"}}>Pending</span>
                             )}
                           </div>
-                          <span className={`chat-badge ${bet.position==="Bull"?"bull-badge":"bear-badge"}`}>{bet.position}</span>
-                          {isClaim ? (
-                            <button className="btn btn-primary" style={{fontSize:10,padding:"4px 8px"}} onClick={() => handleClaim([Number(ep)])}>Claim</button>
-                          ) : bet.claimed ? (
-                            <span style={{fontSize:10,color:"var(--text-muted)"}}>Claimed</span>
-                          ) : (
-                            <span style={{fontSize:10,color:"var(--text-muted)"}}>Pending</span>
-                          )}
+                        );
+                      })}
+                    </div>
+                  )
+                ) : (
+                  <div>
+                    {/* Paper Stats Dashboard */}
+                    <div style={{margin:"0 14px 10px", display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:6, textAlign:"center"}}>
+                      <div style={{background:"var(--bg-3)", borderRadius:4, padding:"6px 4px", border:"1px solid var(--border)"}}>
+                        <div style={{fontSize:9, color:"var(--text-muted)", textTransform:"uppercase", fontWeight:600}}>PnL</div>
+                        <div style={{fontSize:13, fontWeight:700, color: parseFloat(getPaperStats().totalPnL) >= 0 ? "var(--bull)" : "var(--bear)"}}>
+                          {parseFloat(getPaperStats().totalPnL) >= 0 ? "+" : ""}{getPaperStats().totalPnL}%
                         </div>
-                      );
-                    })}
+                      </div>
+                      <div style={{background:"var(--bg-3)", borderRadius:4, padding:"6px 4px", border:"1px solid var(--border)"}}>
+                        <div style={{fontSize:9, color:"var(--text-muted)", textTransform:"uppercase", fontWeight:600}}>Win Rate</div>
+                        <div style={{fontSize:13, fontWeight:700, color:"var(--text-primary)"}}>{getPaperStats().winRate}%</div>
+                      </div>
+                      <div style={{background:"var(--bg-3)", borderRadius:4, padding:"6px 4px", border:"1px solid var(--border)"}}>
+                        <div style={{fontSize:9, color:"var(--text-muted)", textTransform:"uppercase", fontWeight:600}}>Trades</div>
+                        <div style={{fontSize:13, fontWeight:700, color:"var(--text-primary)"}}>{getPaperStats().total}</div>
+                      </div>
+                    </div>
+
+                    {/* Paper Positions List */}
+                    {paperTrades.length === 0 ? (
+                      <div className="empty-state" style={{height:"150px"}}>
+                        <span className="empty-icon">📝</span>
+                        <span className="empty-text">No paper trades</span>
+                        <span style={{fontSize:10,color:"var(--text-muted)", marginBottom:8}}>Toggle Paper Trading to start practice</span>
+                        <button className="btn btn-secondary" style={{fontSize:10, padding:"3px 8px"}} onClick={() => setActiveTab("trade")}>Start practice</button>
+                      </div>
+                    ) : (
+                      <div style={{padding:"0 14px 14px", maxHeight:"200px", overflowY:"auto"}}>
+                        {paperTrades.slice().reverse().map((trade) => (
+                          <div className="position-row" key={trade.id}>
+                            <span className="epoch-badge" style={{fontFamily:"monospace",fontSize:11,color:"var(--text-muted)"}}>#{trade.epoch}</span>
+                            <div>
+                              <div style={{fontSize:11,fontWeight:600}}>{trade.amount} zkLTC</div>
+                              <div style={{fontSize:10,color:"var(--text-muted)"}}>
+                                Entry: ${trade.entryPrice.toFixed(2)}
+                              </div>
+                            </div>
+                            <span className={`chat-badge ${trade.side === "Bull" ? "bull-badge" : "bear-badge"}`}>{trade.side}</span>
+                            <div>
+                              {trade.status === "Closed" ? (
+                                <span style={{fontSize:11, fontWeight:700, color: trade.result === "Win" ? "var(--bull)" : trade.result === "Loss" ? "var(--bear)" : "var(--text-muted)"}}>
+                                  {trade.result === "Win" ? `+${trade.pnl.toFixed(1)}%` : trade.result === "Loss" ? "-100%" : "Cancel"}
+                                </span>
+                              ) : (
+                                <span style={{fontSize:10,color:"var(--text-muted)"}}>Open</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                        <div style={{padding:"8px 0 0", textAlign:"right"}}>
+                          <button className="btn btn-secondary" style={{fontSize:10, color:"var(--bear)", padding:"4px 8px", borderColor:"rgba(239,68,68,0.2)"}} onClick={clearPaperHistory}>Clear History</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
