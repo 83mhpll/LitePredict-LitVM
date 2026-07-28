@@ -152,6 +152,20 @@ const useSoundAlerts = (soundEnabled) => {
    MAIN APP
 ══════════════════════════════════════════════════════ */
 export default function App() {
+  /* ── View Mode & Points State ── */
+  const [viewMode, setViewMode] = useState('landing');
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState(0);
+
+  const [offChainPoints, setOffChainPoints] = useState(() => {
+    try { return parseInt(localStorage.getItem('lp_offChainPoints') || '0'); } catch { return 0; }
+  });
+  const [points, setPoints] = useState(offChainPoints);
+  const [lastCheckIn, setLastCheckIn] = useState(() => localStorage.getItem('lp_lastCheckIn') || null);
+  const [completedTasks, setCompletedTasks] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('lp_completedTasks')) || []; } catch { return []; }
+  });
+
   /* ── Local Storage Settings ── */
   const defaultSettings = {
     isDarkTheme: true,
@@ -263,6 +277,64 @@ export default function App() {
   const candlesDataRef = useRef(genCandles(85));
   const scanIntervalRef = useRef(settings.scanInterval);
   useEffect(() => { scanIntervalRef.current = settings.scanInterval; }, [settings.scanInterval]);
+
+  /* ═══ Network & Points Handlers ═══ */
+  const addLitVMNetwork = async () => {
+    if (!window.ethereum) { toast("MetaMask or Web3 wallet not found", "error"); return; }
+    try {
+      await window.ethereum.request({
+        method: "wallet_addEthereumChain",
+        params: [{
+          chainId: "0x1159",
+          chainName: "LitVM Testnet",
+          nativeCurrency: { name: "zkLTC", symbol: "zkLTC", decimals: 18 },
+          rpcUrls: ["https://liteforge.rpc.caldera.xyz/http"],
+          blockExplorerUrls: ["https://liteforge.explorer.caldera.xyz"]
+        }]
+      });
+      toast("LitVM Testnet added successfully!", "success");
+    } catch (e) {
+      toast("Failed to add network configuration", "error");
+    }
+  };
+
+  const handleDailyCheckIn = () => {
+    const now = new Date().getTime();
+    if (lastCheckIn && (now - parseInt(lastCheckIn)) < 86400000) {
+      toast("Check-in available every 24 hours", "warning");
+      return;
+    }
+    setLastCheckIn(now.toString());
+    localStorage.setItem('lp_lastCheckIn', now.toString());
+    const updatedPoints = offChainPoints + 50;
+    setOffChainPoints(updatedPoints);
+    localStorage.setItem('lp_offChainPoints', updatedPoints.toString());
+    setPoints(prev => prev + 50);
+    playSound('win');
+    toast("Daily Check-In successful! +50 LPs", "success");
+  };
+
+  const handleSocialTask = (taskId, pointsReward) => {
+    if (completedTasks.includes(taskId)) return;
+    const newTasks = [...completedTasks, taskId];
+    setCompletedTasks(newTasks);
+    localStorage.setItem('lp_completedTasks', JSON.stringify(newTasks));
+    const updatedPoints = offChainPoints + pointsReward;
+    setOffChainPoints(updatedPoints);
+    localStorage.setItem('lp_offChainPoints', updatedPoints.toString());
+    setPoints(prev => prev + pointsReward);
+    toast(`Task completed! +${pointsReward} LPs`, "success");
+    if (taskId === 'twitter') window.open('https://twitter.com/litepredict', '_blank');
+    if (taskId === 'telegram') window.open('https://t.me/litepredict', '_blank');
+  };
+
+  const getTier = (pts) => {
+    if (pts >= 5000) return { name: 'Diamond', color: '#06b6d4', shadow: '0 0 10px #06b6d4', next: null, min: 5000 };
+    if (pts >= 1500) return { name: 'Gold', color: '#eab308', shadow: '0 0 10px #eab308', next: 5000, min: 1500 };
+    if (pts >= 500) return { name: 'Silver', color: '#94a3b8', shadow: '0 0 10px #94a3b8', next: 1500, min: 500 };
+    return { name: 'Bronze', color: '#b45309', shadow: '0 0 10px #b45309', next: 500, min: 0 };
+  };
+  const currentTier = getTier(points);
 
   /* ═══ Desktop Notification Helper ═══ */
   const sendDesktopNotif = useCallback((title, body) => {
@@ -516,13 +588,26 @@ export default function App() {
       }
 
       if (account) {
+        let newOnChainPoints = 0;
         const userRounds = await c.getUserRounds(account).catch(() => []);
+        newOnChainPoints += userRounds.length * 20;
+
         const bets = {}, cl = [];
         for (const epVal of userRounds) {
           const ep = Number(epVal);
           const b = await c.userBets(ep, account);
           if (b[1] > 0n) {
             bets[ep] = { position: Number(b[0])===0?"Bull":"Bear", amount: ethers.formatEther(b[1]), claimed: b[2] };
+            newOnChainPoints += Math.floor(parseFloat(ethers.formatEther(b[1])) * 10);
+            
+            try {
+              const r = await c.rounds(ep);
+              const winner = r[5] > r[4] ? "Bull" : (r[5] < r[4] ? "Bear" : null);
+              if (winner && ((Number(b[0])===0 && winner==="Bull") || (Number(b[0])===1 && winner==="Bear"))) {
+                  newOnChainPoints += 50;
+              }
+            } catch (err) {}
+
             if (!b[2]) {
               const ok = await c.claimable(ep, account).catch(() => false);
               if (ok) cl.push(ep);
@@ -531,6 +616,7 @@ export default function App() {
         }
         setUserBets(bets);
         setClaimableEpochs(cl);
+        setPoints(offChainPoints + newOnChainPoints);
       }
     } catch(e) { console.error(e); }
     setIsScanning(false);
@@ -940,6 +1026,37 @@ export default function App() {
 
   return (
     <div className={`app ${settings.isDarkTheme ? '' : 'light-theme'}`}>
+
+      {viewMode === 'landing' ? (
+        <div style={{display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', padding:40, textAlign:'center', background: 'linear-gradient(135deg, var(--bg-main) 0%, var(--bg-panel) 100%)'}}>
+          <div style={{fontSize: 72, marginBottom: 20}}>🔮</div>
+          <h1 style={{fontSize: 48, marginBottom: 16, background: 'linear-gradient(90deg, #3b82f6, #8b5cf6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'}}>LitePredict on LitVM</h1>
+          <p style={{fontSize: 20, color: 'var(--text-secondary)', maxWidth: 600, marginBottom: 40}}>
+            The premier prediction market for the Litecoin ecosystem. Predict LTC price movements, earn LPs, and climb the leaderboard on the high-speed LitVM Testnet.
+          </p>
+          <div style={{display:'flex', gap: 16, marginBottom: 60}}>
+            <button className="btn btn-primary" style={{fontSize: 18, padding: '16px 32px'}} onClick={() => setViewMode('app')}>Launch App</button>
+            <button className="btn btn-ghost" style={{fontSize: 18, padding: '16px 32px', border: '2px solid #f59e0b', color: '#f59e0b'}} onClick={addLitVMNetwork}>🦊 Add LitVM Testnet</button>
+            <button className="btn btn-secondary" style={{fontSize: 18, padding: '16px 32px'}} onClick={() => { setViewMode('app'); setShowOnboarding(true); }}>📖 How to Play</button>
+          </div>
+          
+          <div style={{display:'flex', gap:40, opacity: 0.8}}>
+            <div>
+              <div style={{fontSize: 24, fontWeight: 'bold'}}>{currentEpoch}</div>
+              <div style={{fontSize: 12, color: 'var(--text-secondary)'}}>Rounds Played</div>
+            </div>
+            <div>
+              <div style={{fontSize: 24, fontWeight: 'bold'}}>8,000 TPS</div>
+              <div style={{fontSize: 12, color: 'var(--text-secondary)'}}>LitVM Speed</div>
+            </div>
+            <div>
+              <div style={{fontSize: 24, fontWeight: 'bold'}}>DIA</div>
+              <div style={{fontSize: 12, color: 'var(--text-secondary)'}}>Trustless Oracle</div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
       <style>{`
         .light-theme {
           --bg-main: #f8fafc;
@@ -1142,6 +1259,12 @@ export default function App() {
         </div>
 
         <div className="topbar-right" style={{position: 'relative'}}>
+          <button className="btn btn-ghost" style={{display:"flex",alignItems:"center",gap:5,color:"#10b981",border:"1px solid #10b981",fontSize:12}} onClick={() => setShowOnboarding(true)}>
+            📖 How to Play
+          </button>
+          <button className="btn btn-ghost" style={{display:"flex",alignItems:"center",gap:5,color:"#f59e0b",border:"1px solid #f59e0b",fontSize:12}} onClick={addLitVMNetwork}>
+            🦊 Add LitVM
+          </button>
           <a href="https://liteforge.hub.caldera.xyz" target="_blank" rel="noopener noreferrer" className="btn btn-ghost" style={{display:"flex",alignItems:"center",gap:5,color:"#3b82f6",border:"1px solid #3b82f6",textDecoration:"none",fontSize:12}}>
             🚰 Get zkLTC
           </a>
@@ -1285,6 +1408,7 @@ export default function App() {
               <div className={`tab ${activeTab==='positions'?'active':''}`} onClick={()=>setActiveTab('positions')}>Portfolio</div>
               <div className={`tab ${activeTab==='watchlist'?'active':''}`} onClick={()=>setActiveTab('watchlist')}>Watchlist</div>
               <div className={`tab ${activeTab==='backtest'?'active':''}`} onClick={()=>setActiveTab('backtest')}>Backtest</div>
+              <div className={`tab ${activeTab==='points'?'active':''}`} onClick={()=>setActiveTab('points')}>Points</div>
             </div>
             <div className="panel-body" style={{padding: activeTab==='trade'?16:0}}>
               
@@ -1421,6 +1545,79 @@ export default function App() {
                 </div>
               )}
 
+              {/* POINTS TAB */}
+              {activeTab === 'points' && (
+                <div style={{padding: 16, display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto', height: '100%'}}>
+                  <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', background:'var(--bg-input)', padding:16, borderRadius:8}}>
+                    <div>
+                      <div style={{fontSize: 12, color: 'var(--text-secondary)'}}>Your LitePoints (LPs)</div>
+                      <div style={{fontSize: 24, fontWeight: 'bold'}}>{points}</div>
+                    </div>
+                    <div style={{textAlign:'right'}}>
+                      <div style={{fontSize: 12, color: 'var(--text-secondary)'}}>Tier</div>
+                      <div style={{fontSize: 16, fontWeight: 'bold', color: currentTier.color, textShadow: currentTier.shadow}}>{currentTier.name}</div>
+                    </div>
+                  </div>
+                  {currentTier.next && (
+                    <div>
+                      <div style={{display:'flex', justifyContent:'space-between', fontSize:11, marginBottom:4}}>
+                        <span>Progress to {getTier(currentTier.next).name}</span>
+                        <span>{points} / {currentTier.next}</span>
+                      </div>
+                      <div style={{width:'100%', height:6, background:'var(--bg-input)', borderRadius:3, overflow:'hidden'}}>
+                        <div style={{height:'100%', width:`${Math.min(100, ((points - currentTier.min) / (currentTier.next - currentTier.min)) * 100)}%`, background: getTier(currentTier.next).color}} />
+                      </div>
+                    </div>
+                  )}
+
+                  <button className="btn btn-primary" onClick={handleDailyCheckIn} disabled={lastCheckIn && (new Date().getTime() - parseInt(lastCheckIn)) < 86400000} style={{padding: 12, width: '100%'}}>
+                    {lastCheckIn && (new Date().getTime() - parseInt(lastCheckIn)) < 86400000 ? 'Check back tomorrow' : '🎁 Daily Check-In (+50 LPs)'}
+                  </button>
+
+                  <div>
+                    <div style={{fontSize: 12, fontWeight: 'bold', marginBottom: 8}}>Social Tasks</div>
+                    <div style={{display:'flex', flexDirection:'column', gap:8}}>
+                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', background:'var(--bg-input)', padding:'8px 12px', borderRadius:4}}>
+                        <span style={{fontSize:12}}>Follow us on X</span>
+                        <button className="btn btn-secondary" style={{fontSize:10}} disabled={completedTasks.includes('twitter')} onClick={() => handleSocialTask('twitter', 100)}>{completedTasks.includes('twitter') ? 'Done' : '+100 LPs'}</button>
+                      </div>
+                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', background:'var(--bg-input)', padding:'8px 12px', borderRadius:4}}>
+                        <span style={{fontSize:12}}>Join Telegram</span>
+                        <button className="btn btn-secondary" style={{fontSize:10}} disabled={completedTasks.includes('telegram')} onClick={() => handleSocialTask('telegram', 100)}>{completedTasks.includes('telegram') ? 'Done' : '+100 LPs'}</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{fontSize: 12, fontWeight: 'bold', marginBottom: 8}}>Leaderboard</div>
+                    <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                      {[
+                        {rank:1, addr:'0xTrader...a8f4', pts:8540, tier:'Diamond', color:'#06b6d4'},
+                        {rank:2, addr:'0xWhale...b1c9', pts:6200, tier:'Diamond', color:'#06b6d4'},
+                        {rank:3, addr:'0xAlpha...d3e2', pts:4850, tier:'Gold', color:'#eab308'},
+                        {rank:4, addr:'0xSniper...f7a1', pts:3920, tier:'Gold', color:'#eab308'},
+                        {rank:5, addr:'0xChad...9c4b', pts:2150, tier:'Gold', color:'#eab308'}
+                      ].map(l => (
+                        <div key={l.rank} style={{display:'flex', justifyContent:'space-between', padding:'4px 8px', fontSize:12, borderBottom:'1px solid var(--border)'}}>
+                          <span style={{width: 20}}>{l.rank}.</span>
+                          <span style={{flex:1}}>{l.addr}</span>
+                          <span style={{color:l.color, marginRight: 8, fontSize:10}}>{l.tier}</span>
+                          <span style={{fontWeight:'bold'}}>{l.pts} LPs</span>
+                        </div>
+                      ))}
+                      {points > 0 && (
+                        <div style={{display:'flex', justifyContent:'space-between', padding:'4px 8px', fontSize:12, marginTop: 4, background:'var(--bg-input)', borderRadius:4, fontWeight:'bold'}}>
+                          <span style={{width: 20}}>...</span>
+                          <span style={{flex:1}}>You ({account ? shortAddr(account) : 'Connected'})</span>
+                          <span style={{color:currentTier.color, marginRight: 8, fontSize:10}}>{currentTier.name}</span>
+                          <span>{points} LPs</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* BACKTEST TAB */}
               {activeTab === 'backtest' && (
                 <div style={{display:'flex', flexDirection:'column', height:'100%'}}>
@@ -1457,6 +1654,53 @@ export default function App() {
 
         </div>
       </div>
+      
+      {/* ═══ ONBOARDING MODAL ═══ */}
+      {showOnboarding && (
+        <div className="modal-overlay" onClick={() => setShowOnboarding(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><span>Interactive Tutorial</span><span className="modal-close" onClick={() => setShowOnboarding(false)}>✕</span></div>
+            <div style={{marginBottom: 20}}>
+              <div style={{display:'flex', justifyContent:'center', gap: 8, marginBottom: 16}}>
+                {[0,1,2,3].map(s => <div key={s} style={{height: 4, flex: 1, background: s <= onboardingStep ? '#3b82f6' : 'var(--bg-input)', borderRadius: 2}} />)}
+              </div>
+              
+              {onboardingStep === 0 && (
+                <div>
+                  <h3 style={{marginBottom: 8}}>1. Get a Web3 Wallet</h3>
+                  <p style={{fontSize: 14, color: 'var(--text-secondary)', marginBottom: 16}}>To play on LitePredict, you need a Web3 wallet like MetaMask or Rabby installed in your browser.</p>
+                  <button className="btn btn-primary" style={{width: '100%'}} onClick={() => setOnboardingStep(1)}>Next</button>
+                </div>
+              )}
+              {onboardingStep === 1 && (
+                <div>
+                  <h3 style={{marginBottom: 8}}>2. Add LitVM Testnet</h3>
+                  <p style={{fontSize: 14, color: 'var(--text-secondary)', marginBottom: 16}}>We need to configure your wallet to talk to the LitVM Testnet.</p>
+                  <button className="btn btn-secondary" style={{width: '100%', marginBottom: 8, border: '1px solid #f59e0b', color: '#f59e0b'}} onClick={addLitVMNetwork}>🦊 Add Network to Wallet</button>
+                  <button className="btn btn-primary" style={{width: '100%'}} onClick={() => setOnboardingStep(2)}>Next</button>
+                </div>
+              )}
+              {onboardingStep === 2 && (
+                <div>
+                  <h3 style={{marginBottom: 8}}>3. Get Testnet zkLTC</h3>
+                  <p style={{fontSize: 14, color: 'var(--text-secondary)', marginBottom: 16}}>You need zkLTC to pay for gas and make predictions. Get some for free from the faucet.</p>
+                  <a href="https://liteforge.hub.caldera.xyz" target="_blank" rel="noopener noreferrer" className="btn btn-secondary" style={{display: 'block', textAlign: 'center', width: '100%', marginBottom: 8, textDecoration: 'none'}}>🚰 Open Faucet in New Tab</a>
+                  <button className="btn btn-primary" style={{width: '100%'}} onClick={() => setOnboardingStep(3)}>Next</button>
+                </div>
+              )}
+              {onboardingStep === 3 && (
+                <div>
+                  <h3 style={{marginBottom: 8}}>4. Make Predictions & Earn LPs</h3>
+                  <p style={{fontSize: 14, color: 'var(--text-secondary)', marginBottom: 16}}>Predict if LTC will go up (Bull) or down (Bear) every 5 minutes. Earn LitePoints (LPs) for your activity and climb the leaderboard!</p>
+                  <button className="btn btn-primary" style={{width: '100%'}} onClick={() => { setOnboardingStep(0); setShowOnboarding(false); setActiveTab('points'); }}>Start Playing</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      </>
+      )}
     </div>
   );
 }
