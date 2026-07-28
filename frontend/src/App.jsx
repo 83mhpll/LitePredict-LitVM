@@ -556,28 +556,55 @@ export default function App() {
     return () => clearInterval(id);
   }, [loadData]);
 
-  /* ═══ Live News Refresh ═══ */
+  /* ═══ Live News Refresh (CryptoCompare REST API) ═══ */
+  // NOTE: CryptoCompare News uses REST polling (not WebSocket).
+  // WebSocket on CryptoCompare is only for price tick streaming.
+  const CRYPTOCOMPARE_API_KEY = "df472cdcddd2e27d59a30da1d91c6c0b0290f2252adf52da99ad9cdcf3702369";
+
   useEffect(() => {
     const fetchNews = async () => {
       try {
-        const res = await fetch("https://min-api.cryptocompare.com/data/v2/news/?lang=EN&categories=LTC,DeFi&extraParams=LitePredict");
+        const url = `https://min-api.cryptocompare.com/data/v2/news/?lang=EN&categories=LTC,DeFi,Blockchain&extraParams=LitePredict&api_key=${CRYPTOCOMPARE_API_KEY}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        if (data && data.Data) {
-          const mapped = data.Data.slice(0, 10).map((n, i) => ({
-            id: 100 + i,
-            tag: n.categories.includes("LTC") ? "litecoin" : (n.categories.includes("DeFi") ? "defi" : "market"),
-            tagLabel: n.categories.includes("LTC") ? "Litecoin" : "Market",
-            title: n.title,
-            source: n.source_info.name,
-            time: new Date(n.published_on * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
-          }));
-          setNewsItems(mapped.length ? mapped : INITIAL_NEWS_ITEMS);
+        if (data && data.Data && data.Data.length > 0) {
+          const mapped = data.Data.slice(0, 15).map((n, i) => {
+            const cats = (n.categories || "").toLowerCase();
+            let tag = "market";
+            let tagLabel = "Market";
+            if (cats.includes("ltc") || cats.includes("litecoin")) { tag = "litecoin"; tagLabel = "Litecoin"; }
+            else if (cats.includes("defi")) { tag = "defi"; tagLabel = "DeFi"; }
+            else if (cats.includes("blockchain") || cats.includes("mining")) { tag = "market"; tagLabel = "Market"; }
+            // Map some to litvm if they mention LitVM or Layer2
+            if ((n.title || "").toLowerCase().includes("litvm") || (n.body || "").toLowerCase().includes("litvm")) {
+              tag = "litvm"; tagLabel = "LitVM";
+            }
+            const pubDate = new Date(n.published_on * 1000);
+            const now = new Date();
+            const diffMs = now - pubDate;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMins / 60);
+            const timeAgo = diffMins < 60 ? `${diffMins}m ago` : `${diffHours}h ago`;
+            return {
+              id: 100 + i,
+              tag,
+              tagLabel,
+              title: n.title,
+              source: n.source_info?.name || n.source || "CryptoCompare",
+              time: timeAgo,
+              url: n.url
+            };
+          });
+          setNewsItems(mapped);
         }
       } catch (e) {
+        console.warn("CryptoCompare news fetch failed, using static fallback:", e);
         setNewsItems(INITIAL_NEWS_ITEMS);
       }
     };
     fetchNews();
+    // Refresh every 5 minutes
     const nid = setInterval(fetchNews, 300000);
     return () => clearInterval(nid);
   }, []);
@@ -1212,11 +1239,16 @@ export default function App() {
                   <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
                     <span className={`news-tag ${n.tag}`}>{n.tagLabel}</span>
                     <div style={{display:'flex', gap:4}}>
-                      <span className="icon-btn" onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(n.title)}`, '_blank')} title="Google Search">🔍</span>
-                      <span className="icon-btn" onClick={() => window.open(`https://twitter.com/search?q=${encodeURIComponent(n.title)}`, '_blank')} title="Twitter Search">🐦</span>
+                      <span className="icon-btn" onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(n.title)}`, '_blank')} title="Search on Google">🔍</span>
+                      <span className="icon-btn" onClick={() => window.open(`https://twitter.com/search?q=${encodeURIComponent(n.title)}&src=typed_query`, '_blank')} title="Search on Twitter/X">🐦</span>
                     </div>
                   </div>
-                  <div className="news-title">{n.title}</div>
+                  <div
+                    className="news-title"
+                    style={{cursor: n.url ? 'pointer' : 'default'}}
+                    onClick={() => n.url && window.open(n.url, '_blank')}
+                    title={n.url ? "Read full article" : ""}
+                  >{n.title}</div>
                   <div className="news-meta"><span>{n.source}</span>·<span>{n.time}</span></div>
                 </div>
               ))}
