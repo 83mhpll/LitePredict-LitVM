@@ -1,96 +1,134 @@
-# LitePredict - Prediction Market on LitVM
+# ⚡ LitePredict-LitVM
 
-LitePredict is a high-performance, trustless, and fast-paced prediction market dApp designed for **LitVM**, Litecoin's first EVM-compatible zero-knowledge rollup. 
+![LitePredict Banner](https://via.placeholder.com/1200x300?text=LitePredict+-+Next-Gen+Binary+Options+on+Litecoin)
 
-The dApp integrates with **DIA Oracles** to fetch real-time, transparent LTC/USD price feeds to determine prediction round winners (Bull vs. Bear).
+> **The Premier Binary Options Protocol on LitVM (Litecoin's ZK Rollup) Powered by DIA Oracles**
 
----
-
-## Key Features
-
-1. **LitVM Optimizations:** Low transaction fees and lightning-fast block times make frequent rounds (e.g. 5-minute epochs) highly accessible and cheap.
-2. **DIA Oracle Integration:** Verifiable and decentralized price feeds protect round integrity.
-3. **Decentralized Keeper System:** Permissionless round execution design. Anyone can trigger new epochs after expiry.
-4. **Premium UI/UX:** A dark glassmorphic design system optimized for mobile and desktop Web3 wallets.
+LitePredict is a high-performance, decentralized binary options platform natively built for the LitVM ecosystem. By leveraging the speed and low fees of Litecoin's Zero-Knowledge Rollup (LitVM) alongside the robust, tamper-proof data feeds of DIA Oracles, LitePredict offers an unparalleled decentralized trading experience.
 
 ---
 
-## Repository Structure
+## 🏗 Project Architecture
 
-```
-├── contracts/             # Smart Contracts directory (Foundry setup)
-│   ├── src/
-│   │   ├── LitePredict.sol       # Core prediction market contract
-│   │   └── interfaces/
-│   │       └── IDiaOracle.sol    # DIA Oracle interface
-│   ├── test/
-│   │   └── LitePredict.t.sol     # Comprehensive unit tests with Mock DIA Oracle
-│   └── script/
-│       ├── Deploy.s.sol          # LitVM Testnet deployment script
-│       └── DeployPOC.s.sol       # Local POC deployment script
-├── frontend/             # React + Vite frontend application
-│   ├── src/
-│   │   ├── App.jsx               # Main React interface & Web3 state
-│   │   └── index.css             # Glassmorphism/neon custom design system
-│   └── keeper.js                 # Local POC auto-keeper & price simulator
-└── run_poc.sh            # One-click local POC launch script
+```mermaid
+graph TD
+    User([Trader / Liquidity Provider]) -->|Interacts| UI[Meridian UI Next.js Frontend]
+    UI -->|Calls| LP[LitePredict.sol]
+    Keeper([Keeper Bot Node.js]) -->|Calls executeRound| LP
+    DIA([DIA Price Oracle]) -->|Feeds Data| LP
+    LP -->|Emits Events| Subgraph([Indexer / Analytics])
+    
+    subgraph LitVM ZK Rollup
+        LP
+        DIA
+    end
 ```
 
 ---
 
-## 🚀 How to Run the Local POC (Proof of Concept)
+## ✨ Core Features
 
-We have built a completely automated local simulator that runs Anvil (simulating the LitVM network), deploys the smart contracts, starts a local oracle price simulator + keeper, and launches the web app.
+*   **Midas-style Landing Page**: A premium, conversion-optimized entry point highlighting protocol TVL, total trades, and live market status.
+*   **Meridian UI Overhaul**: A completely redesigned, ultra-smooth trading interface with real-time price charts and intuitive UX.
+*   **LitePoints LPs Reward System**: Liquidity providers earn "LitePoints" based on their contribution, gamifying liquidity provision and incentivizing long-term protocol health.
+*   **Backtest Engine**: Native tooling to simulate past market conditions and backtest trading strategies directly on the platform.
+*   **Live News Categories**: Integrated crypto news feeds directly in the trading terminal, segmented by asset categories (DeFi, L1s, NFTs, etc.).
+*   **Paper Trading Mode**: Risk-free environment for new users to test strategies before deploying real capital.
+*   **Auto-Network Configurations**: Seamless onboarding with one-click wallet configurations for the LitVM network.
 
-### Prerequisites
-Make sure you have [Foundry](https://getfoundry.sh/) and [Node.js](https://nodejs.org/) installed.
+---
 
-### Launching the POC
-Simply run the launch script in your terminal:
+## 🚀 Onboarding & Setup Guide
+
+### 1. MetaMask Setup (LitVM Testnet)
+
+To interact with LitePredict, you must configure your wallet for the LitVM Testnet.
+
+> [!TIP]
+> Use the "Auto-Connect" feature on our frontend to instantly add the network to your wallet.
+
+**Manual Configuration:**
+*   **Network Name:** LitVM Testnet
+*   **RPC URL:** `https://liteforge.rpc.caldera.xyz/http`
+*   **Chain ID:** `4441`
+*   **Currency Symbol:** `zkLTC`
+
+### 2. Faucet
+
+To pay for gas and place trades, you need testnet `zkLTC`.
+*   Visit the [LitVM Faucet](https://faucet.caldera.xyz/liteforge) to claim your test tokens.
+
+---
+
+## 🛠 Technical Specification
+
+### Smart Contracts
+
+The protocol's core logic is encapsulated within `LitePredict.sol`, ensuring transparent and immutable round execution.
+
+#### Core Methods:
+*   `betBull(uint256 roundId)`: Place a position that the asset price will increase by the end of the round.
+*   `betBear(uint256 roundId)`: Place a position that the asset price will decrease by the end of the round.
+*   `executeRound()`: Transitions the current round, fetching the latest price from the DIA Oracle and determining the winning side.
+*   `claim(uint256[] roundIds)`: Claim winnings from successful predictions.
+
+#### DIA Oracle Integration
+LitePredict relies on [DIA Oracles](https://diadata.org/) for highly reliable, cross-chain price feeds. The oracle address is hardcoded and verified in the contract deployment scripts.
+
+#### Testing
+The smart contract suite is rigorously tested using Foundry.
 ```bash
-./run_poc.sh
+# Run the test suite
+forge test -vvv
 ```
 
-This script will:
-1. Start a local `anvil` node on port 8545 simulating Chain ID 4441 (LitVM Testnet).
-2. Deploy the `MockDiaOracle` and the `LitePredict` contracts.
-3. Start the background Auto-Keeper simulation (`frontend/keeper.js`) to auto-advance rounds and fluctuate LTC prices.
-4. Launch the Vite React development server at `http://localhost:5173/`.
+---
 
-### Testing locally with MetaMask:
-1. Open MetaMask and add a custom network:
-   - **RPC URL:** `http://127.0.0.1:8545`
-   - **Chain ID:** `4441`
-   - **Symbol:** `zkLTC`
-2. Import one of the pre-funded Anvil accounts. For example, private key:
-   `0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80`
-3. Connect your wallet at `http://localhost:5173/` and start placing Bull/Bear bets! 
-4. Watch the rounds automatically advance and prices fluctuate every 60 seconds!
+## 🤖 Keeper Bot Setup
+
+The automated market lifecycle is maintained by a decentralized keeper bot located in the `/keeper` directory. This Node.js/TypeScript service is responsible for calling `executeRound` precisely every 5 minutes.
+
+> [!WARNING]
+> The keeper bot requires an externally owned account (EOA) funded with `zkLTC` to cover gas fees for executing rounds.
+
+**Running the Keeper:**
+```bash
+cd keeper
+npm install
+npm run build
+# Set your PRIVATE_KEY in a .env file first
+npm run start
+```
 
 ---
 
-## 🌐 Deploying to LitVM Testnet (LiteForge)
+## 💻 Development & Installation
 
-When you are ready to deploy to the live LitVM Testnet:
+Follow these steps to run the frontend and development environment locally.
 
-1. Obtain testnet `zkLTC` from the [LitVM Testnet Faucet](https://testnet.litvm.com/).
-2. Run the deployment script:
-   ```bash
-   forge script script/Deploy.s.sol --rpc-url https://liteforge.rpc.caldera.xyz/http --broadcast --private-key YOUR_PRIVATE_KEY
-   ```
-3. Copy the deployed contract address from the logs.
-4. On the frontend UI, click **Edit** next to the contract address field, paste your deployed address, and click **Save**.
+```bash
+# Clone the repository
+git clone https://github.com/your-org/Vitvm.git
+cd Vitvm
+
+# Install dependencies
+npm install
+
+# Start the development server
+npm run dev
+```
+Navigate to `http://localhost:3000` to view the application.
 
 ---
 
-## 📦 Push to GitHub
+## 📝 Semantic Commits Guideline
 
-To push this repository to your GitHub account:
+To maintain a clean and readable Git history, we strictly follow the [Conventional Commits](https://www.conventionalcommits.org/) specification.
 
-1. Create a new empty repository on GitHub (e.g. `LitePredict-LitVM`).
-2. Run the following commands in this directory:
-   ```bash
-   git remote add origin https://github.com/YOUR_GITHUB_USERNAME/LitePredict-LitVM.git
-   git branch -M main
-   git push -u origin main
-   ```
+| Prefix | Description | Example |
+| :--- | :--- | :--- |
+| `feat:` | A new feature | `feat: integrate DIA oracle feed` |
+| `fix:` | A bug fix | `fix: resolve claim calculation error` |
+| `design:` | UI/UX visual changes | `design: update Meridian button styles` |
+| `docs:` | Documentation only changes | `docs: add keeper setup guide` |
+| `refactor:` | Code change that neither fixes a bug nor adds a feature | `refactor: optimize executeRound gas usage` |
