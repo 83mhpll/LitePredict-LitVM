@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { ethers } from "ethers";
-import { createChart, ColorType, CrosshairMode, CandlestickSeries } from "lightweight-charts";
+import { createChart, ColorType, CrosshairMode, CandlestickSeries, LineSeries } from "lightweight-charts";
 
 /* ── Contract Config ── */
 const LITE_PREDICT_ABI = [
@@ -19,9 +19,6 @@ const LITE_PREDICT_ABI = [
   "function genesisLockOnce() view returns (bool)",
   "function genesisLockRound()"
 ];
-const DIA_ORACLE_ABI = [
-  "function latestRoundData() external view returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)"
-];
 
 const DEFAULT_CONTRACT = "0x32dDD87325e9fF3D522490ddb7c79F4c23744B01";
 const DIA_LTC_USD = "0x45dDa5d881BD2C917976CCfde74fFd6f6412da29";
@@ -38,7 +35,7 @@ const shortAddr = (a) => a ? `${a.slice(0,5)}…${a.slice(-4)}` : "";
 const randomBetween = (a, b) => a + Math.random() * (b - a);
 
 /* ── Static News Data ── */
-const NEWS_ITEMS = [
+const INITIAL_NEWS_ITEMS = [
   { id:1, tag:"litvm", tagLabel:"LitVM", title:"LitVM Builders Program opens Season 2 – $500K in grants available for EVM dApps on Litecoin rollup", source:"LitVM Blog", time:"2m ago" },
   { id:2, tag:"litecoin", tagLabel:"Litecoin", title:"Litecoin network processes record 1.2M daily transactions amid DeFi expansion", source:"CoinDesk", time:"15m ago" },
   { id:3, tag:"market", tagLabel:"Market", title:"LTC/USD reclaims $85 support as Bitcoin correlation holds strong heading into weekend", source:"CoinTelegraph", time:"28m ago" },
@@ -47,6 +44,10 @@ const NEWS_ITEMS = [
   { id:6, tag:"litecoin", tagLabel:"Litecoin", title:"Charlie Lee: LitVM represents the most exciting development in Litecoin's 14-year history", source:"Twitter", time:"3h ago" },
   { id:7, tag:"market", tagLabel:"Market", title:"Prediction markets show 68% probability of LTC hitting $100 by Q3 2026", source:"Polymarket", time:"4h ago" },
   { id:8, tag:"defi", tagLabel:"DeFi", title:"zkLTC total value locked crosses $10M milestone in testnet environment within first week", source:"DeFiLlama", time:"5h ago" },
+  { id:9, tag:"market", tagLabel:"Market", title:"Whales accumulating LTC ahead of halving narrative resurgence", source:"CryptoSlate", time:"6h ago" },
+  { id:10, tag:"litvm", tagLabel:"LitVM", title:"LitVM mainnet launch scheduled for next quarter", source:"LitVM News", time:"7h ago" },
+  { id:11, tag:"defi", tagLabel:"DeFi", title:"New yield farming protocol launches on LitVM with 1000% APY", source:"DappRadar", time:"8h ago" },
+  { id:12, tag:"litecoin", tagLabel:"Litecoin", title:"Litecoin hash rate hits new all-time high", source:"MiningPoolStats", time:"9h ago" }
 ];
 
 /* ── Static Chat Messages ── */
@@ -83,7 +84,7 @@ const generateOrderbook = (midPrice) => {
 const genCandles = (basePrice = 85) => {
   const candles = [];
   let price = basePrice;
-  const now = Math.floor(Date.now() / 10000) * 10; // align to 10s boundary
+  const now = Math.floor(Date.now() / 10000) * 10;
   for (let i = 180; i >= 0; i--) {
     const barTime = now - i * 10;
     const open = price;
@@ -97,16 +98,99 @@ const genCandles = (basePrice = 85) => {
   return candles;
 };
 
+/* ── Opportunity Scoring Engine ── */
+const calcRoundScore = (round) => {
+  if (!round) return 0;
+  const total = parseFloat(round.totalAmount);
+  if (total === 0) return 0;
+  const bullAmt = parseFloat(round.bullAmount);
+  const bearAmt = parseFloat(round.bearAmount);
+  const bullMult = bullAmt > 0 ? (total * 0.98) / bullAmt : 0;
+  const bearMult = bearAmt > 0 ? (total * 0.98) / bearAmt : 0;
+  const maxMult = Math.max(bullMult, bearMult);
+  const imbalance = Math.abs(bullAmt - bearAmt) / (total || 1);
+  const poolSize = Math.min(total / 10, 1);
+  return +(maxMult * (1 + imbalance) * (1 + poolSize)).toFixed(2);
+};
+
+/* ── Hooks ── */
+const useSoundAlerts = (soundEnabled) => {
+  const playSound = useCallback((type) => {
+    if (!soundEnabled) return;
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      
+      if (type === 'new') { 
+        osc.frequency.value = 880; osc.start(); gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.15); osc.stop(ctx.currentTime + 0.15); 
+      } else if (type === 'lock') { 
+        osc.frequency.value = 440; osc.start(); gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.2); osc.stop(ctx.currentTime + 0.2); 
+      } else if (type === 'end') { 
+        osc.frequency.value = 220; osc.start(); gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.3); osc.stop(ctx.currentTime + 0.3); 
+      } else if (type === 'win') {
+        osc.frequency.value = 660; osc.start();
+        setTimeout(() => {
+          const osc2 = ctx.createOscillator();
+          const gain2 = ctx.createGain();
+          osc2.connect(gain2); gain2.connect(ctx.destination);
+          osc2.frequency.value = 880;
+          osc2.start(); gain2.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.3); osc2.stop(ctx.currentTime + 0.3);
+        }, 100);
+        gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.1); osc.stop(ctx.currentTime + 0.1);
+      }
+    } catch (e) {
+      console.warn("Sound error", e);
+    }
+  }, [soundEnabled]);
+  return playSound;
+};
+
 /* ══════════════════════════════════════════════════════
    MAIN APP
 ══════════════════════════════════════════════════════ */
 export default function App() {
+  /* ── Local Storage Settings ── */
+  const defaultSettings = {
+    isDarkTheme: true,
+    soundEnabled: true,
+    desktopNotifEnabled: false,
+    alertThreshold: 3.0,
+    webhookUrl: "",
+    defaultBetAmount: "0.1",
+    maxBetAmount: "100",
+    scanInterval: 60,
+    contractAddr: DEFAULT_CONTRACT,
+    paperStartBalance: 1000
+  };
+  const [settings, setSettings] = useState(() => {
+    try { const s = localStorage.getItem('lp_settings'); return s ? {...defaultSettings, ...JSON.parse(s)} : defaultSettings; }
+    catch { return defaultSettings; }
+  });
+
+  const updateSetting = (key, val) => {
+    setSettings(prev => {
+      const updated = {...prev, [key]: val};
+      localStorage.setItem('lp_settings', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  /* ── Theme Effect ── */
+  useEffect(() => {
+    if (settings.isDarkTheme) document.documentElement.classList.remove('light-theme');
+    else document.documentElement.classList.add('light-theme');
+  }, [settings.isDarkTheme]);
+
+  const playSound = useSoundAlerts(settings.soundEnabled);
+
   /* ── Web3 state ── */
   const [provider, setProvider] = useState(null);
   const [signer, setSigner] = useState(null);
   const [account, setAccount] = useState("");
   const [chainId, setChainId] = useState(0);
-  const [contractAddr, setContractAddr] = useState(() => localStorage.getItem("lp_contract") || DEFAULT_CONTRACT);
 
   /* ── Market state ── */
   const [ltcPrice, setLtcPrice] = useState(85.0);
@@ -123,6 +207,7 @@ export default function App() {
   const [claimableEpochs, setClaimableEpochs] = useState([]);
   const [timeLeft, setTimeLeft] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
 
   /* ── Chart ── */
   const chartContainerRef = useRef(null);
@@ -137,31 +222,88 @@ export default function App() {
   /* ── Trade form ── */
   const [tradeSide, setTradeSide] = useState("Bull");
   const [tradeType, setTradeType] = useState("Market");
-  const [tradeQty, setTradeQty] = useState("");
+  const [tradeQty, setTradeQty] = useState(settings.defaultBetAmount);
   const [limitPrice, setLimitPrice] = useState("");
-  const [activeTab, setActiveTab] = useState("orderbook"); // orderbook | trade | positions
+  const [activeTab, setActiveTab] = useState("orderbook");
 
   /* ── Paper trading state ── */
   const [isPaperMode, setIsPaperMode] = useState(false);
   const [paperTrades, setPaperTrades] = useState(() => {
-    try {
-      const saved = localStorage.getItem("lp_paper_trades");
-      return saved ? JSON.parse(saved) : [];
-    } catch (_) {
-      return [];
-    }
+    try { const saved = localStorage.getItem("lp_paper_trades"); return saved ? JSON.parse(saved) : []; }
+    catch { return []; }
   });
-  const [positionSubTab, setPositionSubTab] = useState("real"); // "real" | "paper"
+  const [paperBalance, setPaperBalance] = useState(() => {
+    try { const saved = localStorage.getItem("lp_paper_balance"); return saved ? parseFloat(saved) : settings.paperStartBalance; }
+    catch { return settings.paperStartBalance; }
+  });
+  const [positionSubTab, setPositionSubTab] = useState("real");
+  const [posFilter, setPosFilter] = useState("All");
+
+  /* ── UI / Features ── */
+  const [toasts, setToasts] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [watchlist, setWatchlist] = useState(() => {
+    try { const saved = localStorage.getItem("lp_watchlist"); return saved ? new Set(JSON.parse(saved)) : new Set(); }
+    catch { return new Set(); }
+  });
+  const [newsCategory, setNewsCategory] = useState("all");
+  const [newsItems, setNewsItems] = useState(INITIAL_NEWS_ITEMS);
+  const [scanCountdown, setScanCountdown] = useState(settings.scanInterval);
+  const [showSettings, setShowSettings] = useState(false);
+  const [contextModalRound, setContextModalRound] = useState(null);
+  const [hcAlert, setHcAlert] = useState(null);
 
   /* ── Chat ── */
   const [chatMessages, setChatMessages] = useState(INITIAL_CHAT);
   const [chatInput, setChatInput] = useState("");
   const chatBodyRef = useRef(null);
 
-  /* ── UI ── */
-  const [toasts, setToasts] = useState([]);
   const prevPriceRef = useRef(85);
   const candlesDataRef = useRef(genCandles(85));
+  const scanIntervalRef = useRef(settings.scanInterval);
+  useEffect(() => { scanIntervalRef.current = settings.scanInterval; }, [settings.scanInterval]);
+
+  /* ═══ Desktop Notification Helper ═══ */
+  const sendDesktopNotif = useCallback((title, body) => {
+    if (settings.desktopNotifEnabled && Notification.permission === "granted") {
+      new Notification(title, { body, icon: '/favicon.ico' });
+    }
+  }, [settings.desktopNotifEnabled]);
+
+  const requestNotifPermission = async () => {
+    if (Notification.permission !== "granted") {
+      const p = await Notification.requestPermission();
+      if (p === "granted") updateSetting('desktopNotifEnabled', true);
+    } else {
+      updateSetting('desktopNotifEnabled', !settings.desktopNotifEnabled);
+    }
+  };
+
+  /* ═══ Discord Webhook ═══ */
+  const sendDiscordAlert = async (webhookUrl, message) => {
+    if (!webhookUrl) return;
+    try {
+      await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: message,
+          embeds: [{ title: '🚨 LitePredict High-Conviction Alert', description: message, color: 0xf59e0b }]
+        })
+      });
+    } catch (_) {}
+  };
+
+  /* ═══ Notification System ═══ */
+  const addNotification = useCallback((title, body, type = 'info') => {
+    const id = Date.now();
+    setNotifications(p => [{ id, title, body, type, time: new Date().toLocaleTimeString(), read: false }, ...p].slice(0, 20));
+    sendDesktopNotif(title, body);
+  }, [sendDesktopNotif]);
+
+  const unreadNotifs = notifications.filter(n => !n.read).length;
+  const markAllRead = () => setNotifications(p => p.map(n => ({...n, read: true})));
 
   /* ═══ Toast helper ═══ */
   const toast = useCallback((msg, type = "info") => {
@@ -174,11 +316,11 @@ export default function App() {
   useEffect(() => {
     if (!chartContainerRef.current) return;
     const chart = createChart(chartContainerRef.current, {
-      layout: { background: { type: ColorType.Solid, color: "#0a0a0a" }, textColor: "#555" },
-      grid: { vertLines: { color: "#111" }, horzLines: { color: "#111" } },
+      layout: { background: { type: ColorType.Solid, color: settings.isDarkTheme ? "#0a0a0a" : "#ffffff" }, textColor: settings.isDarkTheme ? "#555" : "#888" },
+      grid: { vertLines: { color: settings.isDarkTheme ? "#111" : "#eee" }, horzLines: { color: settings.isDarkTheme ? "#111" : "#eee" } },
       crosshair: { mode: CrosshairMode.Normal, vertLine: { color: "#333" }, horzLine: { color: "#333" } },
-      rightPriceScale: { borderColor: "#1a1a1a", textColor: "#555" },
-      timeScale: { borderColor: "#1a1a1a", textColor: "#555", timeVisible: true },
+      rightPriceScale: { borderColor: settings.isDarkTheme ? "#1a1a1a" : "#ddd", textColor: settings.isDarkTheme ? "#555" : "#888" },
+      timeScale: { borderColor: settings.isDarkTheme ? "#1a1a1a" : "#ddd", textColor: settings.isDarkTheme ? "#555" : "#888", timeVisible: true },
       width: chartContainerRef.current.offsetWidth,
       height: chartContainerRef.current.offsetHeight,
     });
@@ -201,9 +343,8 @@ export default function App() {
     ro.observe(chartContainerRef.current);
 
     return () => { ro.disconnect(); chart.remove(); };
-  }, []);
+  }, [settings.isDarkTheme]);
 
-  // Fetch historical candles from Binance (1-minute bars)
   const fetchBinanceKlines = async () => {
     try {
       const res = await fetch("https://api.binance.com/api/v3/klines?symbol=LTCUSDT&interval=1m&limit=180");
@@ -223,30 +364,24 @@ export default function App() {
         prevPriceRef.current = lastPrice;
       }
       return mapped;
-    } catch (err) {
-      console.warn("Failed to fetch Binance klines, using fallback local candles:", err);
-      return null;
-    }
+    } catch (err) { return null; }
   };
 
-  /* ═══ Real-time Binance Price Feed + Chart update ═══ */
+  /* ═══ Real-time Binance Price Feed ═══ */
   useEffect(() => {
     let ws;
     let fallbackInterval;
 
     const initKlinesAndSocket = async () => {
-      // 1. Fetch initial kline history
       const initialData = await fetchBinanceKlines();
       if (initialData && candleSeriesRef.current) {
         candleSeriesRef.current.setData(initialData);
         try { chartRef.current.timeScale().fitContent(); } catch(_) {}
       }
 
-      // 2. Setup real-time WebSocket connection
       const connectSocket = () => {
         try {
           ws = new WebSocket("wss://stream.binance.com:9443/ws/ltcusdt@kline_1m");
-          
           ws.onmessage = (event) => {
             const msg = JSON.parse(event.data);
             if (msg && msg.k) {
@@ -261,106 +396,60 @@ export default function App() {
               });
               prevPriceRef.current = newP;
 
-              // Update chart candle
               if (candleSeriesRef.current) {
                 const candle = {
-                  time: Math.floor(k.t / 1000),
-                  open: parseFloat(k.o),
-                  high: parseFloat(k.h),
-                  low: parseFloat(k.l),
-                  close: newP
+                  time: Math.floor(k.t / 1000), open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: newP
                 };
                 try {
                   candleSeriesRef.current.update(candle);
                   const last = candlesDataRef.current[candlesDataRef.current.length - 1];
-                  if (last && last.time === candle.time) {
-                    candlesDataRef.current[candlesDataRef.current.length - 1] = candle;
-                  } else {
-                    candlesDataRef.current = [...candlesDataRef.current, candle];
-                  }
+                  if (last && last.time === candle.time) candlesDataRef.current[candlesDataRef.current.length - 1] = candle;
+                  else candlesDataRef.current = [...candlesDataRef.current, candle];
                 } catch (_) {}
               }
-
-              // Update orderbook
               setOrderbook(generateOrderbook(newP));
             }
           };
-
-          ws.onerror = (err) => {
-            console.warn("Binance WebSocket error:", err);
-            startPollingFallback();
-          };
-
-          ws.onclose = () => {
-            console.log("Binance WebSocket closed, retrying or falling back to REST");
-            startPollingFallback();
-          };
-        } catch (e) {
-          startPollingFallback();
-        }
+          ws.onerror = () => startPollingFallback();
+          ws.onclose = () => startPollingFallback();
+        } catch (e) { startPollingFallback(); }
       };
 
       const startPollingFallback = () => {
-        if (fallbackInterval) return; // already polling
-        console.log("Starting REST fallback polling...");
+        if (fallbackInterval) return;
         fallbackInterval = setInterval(async () => {
           try {
             const res = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=LTCUSDT");
             const data = await res.json();
             const newP = parseFloat(data.price);
-
             setLtcPrice(prev => {
-              if (newP > prev) setPriceDir("up");
-              else if (newP < prev) setPriceDir("down");
-              else setPriceDir("same");
+              if (newP > prev) setPriceDir("up"); else if (newP < prev) setPriceDir("down"); else setPriceDir("same");
               return newP;
             });
             prevPriceRef.current = newP;
 
-            // Update chart candle (synthesise local 1m bar)
             if (candleSeriesRef.current) {
-              const barTime = Math.floor(Date.now() / 60000) * 60; // 1-minute bars
+              const barTime = Math.floor(Date.now() / 60000) * 60;
               const last = candlesDataRef.current[candlesDataRef.current.length - 1];
               if (last && last.time === barTime) {
-                const updated = {
-                  time: barTime,
-                  open: last.open,
-                  high: Math.max(last.high, newP),
-                  low: Math.min(last.low, newP),
-                  close: newP
-                };
+                const updated = { time: barTime, open: last.open, high: Math.max(last.high, newP), low: Math.min(last.low, newP), close: newP };
                 candlesDataRef.current[candlesDataRef.current.length - 1] = updated;
                 try { candleSeriesRef.current.update(updated); } catch (_) {}
               } else {
                 const open = last ? last.close : newP;
-                const newBar = {
-                  time: barTime,
-                  open,
-                  high: Math.max(open, newP),
-                  low: Math.min(open, newP),
-                  close: newP
-                };
+                const newBar = { time: barTime, open, high: Math.max(open, newP), low: Math.min(open, newP), close: newP };
                 candlesDataRef.current = [...candlesDataRef.current, newBar];
                 try { candleSeriesRef.current.update(newBar); } catch (_) {}
               }
             }
-
             setOrderbook(generateOrderbook(newP));
-          } catch (e) {
-            console.error("REST fallback fetch failed:", e);
-          }
+          } catch (e) {}
         }, 2000);
       };
-
       connectSocket();
     };
-
     initKlinesAndSocket();
-
-    return () => {
-      if (ws) ws.close();
-      if (fallbackInterval) clearInterval(fallbackInterval);
-    };
+    return () => { if (ws) ws.close(); if (fallbackInterval) clearInterval(fallbackInterval); };
   }, []);
 
   /* ═══ Web3 Init ═══ */
@@ -375,15 +464,25 @@ export default function App() {
   }, []);
 
   /* ═══ Load on-chain data ═══ */
+  const prevEpochRef = useRef(0);
+  
   const loadData = useCallback(async () => {
-    if (!ethers.isAddress(contractAddr)) return;
+    if (!ethers.isAddress(settings.contractAddr)) return;
+    setIsScanning(true);
     try {
       const p = provider || new ethers.JsonRpcProvider(LITVM_RPC);
-      const c = new ethers.Contract(contractAddr, LITE_PREDICT_ABI, p);
+      const c = new ethers.Contract(settings.contractAddr, LITE_PREDICT_ABI, p);
       const epoch = Number(await c.currentEpoch());
       setCurrentEpoch(epoch);
+      
+      if (epoch > prevEpochRef.current && prevEpochRef.current !== 0) {
+        playSound('new');
+        addNotification(`Round #${epoch} Started`, `New prediction round is now open for bidding.`);
+      }
+      prevEpochRef.current = epoch;
+
       const fetched = {};
-      for (let ep = Math.max(1, epoch - 2); ep <= epoch; ep++) {
+      for (let ep = Math.max(1, epoch - 3); ep <= epoch; ep++) {
         const r = await c.rounds(ep);
         fetched[ep] = {
           epoch: Number(r[0]), startTimestamp: Number(r[1]), lockTimestamp: Number(r[2]),
@@ -394,10 +493,28 @@ export default function App() {
         };
       }
       setRounds(fetched);
+
+      // HC Alert Check
+      const curRound = fetched[epoch];
+      if (curRound) {
+        const score = calcRoundScore(curRound);
+        if (score >= settings.alertThreshold) {
+          const imbalance = parseFloat(curRound.bullAmount) > parseFloat(curRound.bearAmount) ? 'Bear' : 'Bull';
+          const msg = `High conviction opportunity on Round #${epoch} (${imbalance} edge)! Score: ${score}`;
+          setHcAlert({ epoch, score, edge: imbalance });
+          playSound('new');
+          addNotification('High Conviction Alert', msg, 'warning');
+          sendDiscordAlert(settings.webhookUrl, msg);
+        } else {
+          setHcAlert(null);
+        }
+      }
+
       if (fetched[epoch]) {
         const diff = fetched[epoch].lockTimestamp - Math.floor(Date.now()/1000);
         setTimeLeft(Math.max(0, diff));
       }
+
       if (account) {
         const userRounds = await c.getUserRounds(account).catch(() => []);
         const bets = {}, cl = [];
@@ -416,16 +533,54 @@ export default function App() {
         setClaimableEpochs(cl);
       }
     } catch(e) { console.error(e); }
-  }, [account, contractAddr, provider]);
+    setIsScanning(false);
+    toast("Scan complete", "success");
+  }, [account, settings.contractAddr, provider, settings.alertThreshold, settings.webhookUrl, playSound, addNotification]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  /* ═══ Countdown timer ═══ */
+  /* ═══ Countdown timer & Auto-refresh ═══ */
   useEffect(() => {
     if (timeLeft <= 0) return;
     const id = setInterval(() => setTimeLeft(p => p <= 1 ? 0 : p-1), 1000);
     return () => clearInterval(id);
   }, [timeLeft]);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setScanCountdown(prev => {
+        if (prev <= 1) { loadData(); return scanIntervalRef.current; }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [loadData]);
+
+  /* ═══ Live News Refresh ═══ */
+  useEffect(() => {
+    const fetchNews = async () => {
+      try {
+        const res = await fetch("https://min-api.cryptocompare.com/data/v2/news/?lang=EN&categories=LTC,DeFi&extraParams=LitePredict");
+        const data = await res.json();
+        if (data && data.Data) {
+          const mapped = data.Data.slice(0, 10).map((n, i) => ({
+            id: 100 + i,
+            tag: n.categories.includes("LTC") ? "litecoin" : (n.categories.includes("DeFi") ? "defi" : "market"),
+            tagLabel: n.categories.includes("LTC") ? "Litecoin" : "Market",
+            title: n.title,
+            source: n.source_info.name,
+            time: new Date(n.published_on * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+          }));
+          setNewsItems(mapped.length ? mapped : INITIAL_NEWS_ITEMS);
+        }
+      } catch (e) {
+        setNewsItems(INITIAL_NEWS_ITEMS);
+      }
+    };
+    fetchNews();
+    const nid = setInterval(fetchNews, 300000);
+    return () => clearInterval(nid);
+  }, []);
 
   /* ═══ Chat auto-scroll ═══ */
   useEffect(() => {
@@ -462,18 +617,20 @@ export default function App() {
 
   /* ═══ Place Bet ═══ */
   const placeBet = async () => {
+    if (isPaperMode) { logPaperTrade(tradeSide, tradeQty); return; }
     if (!signer) { toast("Connect wallet first", "error"); return; }
     if (chainId !== LITVM_CHAIN_ID) { toast("Switch to LitVM network", "error"); return; }
     if (!tradeQty || parseFloat(tradeQty) <= 0) { toast("Enter valid amount", "error"); return; }
+    if (parseFloat(tradeQty) > parseFloat(settings.maxBetAmount)) { toast("Exceeds max bet amount", "error"); return; }
     setLoading(true);
     try {
-      const c = new ethers.Contract(contractAddr, LITE_PREDICT_ABI, signer);
+      const c = new ethers.Contract(settings.contractAddr, LITE_PREDICT_ABI, signer);
       const val = ethers.parseEther(tradeQty);
       const tx = tradeSide === "Bull" ? await c.betBull(currentEpoch, { value: val }) : await c.betBear(currentEpoch, { value: val });
       toast(`${tradeSide} order submitted…`, "info");
       await tx.wait();
       toast(`${tradeSide} position entered! Round #${currentEpoch}`, "success");
-      setTradeQty("");
+      setTradeQty(settings.defaultBetAmount);
       await loadData();
     } catch(e) { toast(e.reason || "Transaction failed", "error"); }
     setLoading(false);
@@ -484,7 +641,7 @@ export default function App() {
     if (!signer || claimableEpochs.length === 0) return;
     setLoading(true);
     try {
-      const c = new ethers.Contract(contractAddr, LITE_PREDICT_ABI, signer);
+      const c = new ethers.Contract(settings.contractAddr, LITE_PREDICT_ABI, signer);
       const tx = await c.claim(claimableEpochs);
       await tx.wait();
       toast(`Claimed ${claimableEpochs.length} round(s)!`, "success");
@@ -492,32 +649,30 @@ export default function App() {
     } catch(e) { toast("Claim failed", "error"); }
     setLoading(false);
   };
+  const handleClaim = claimAll;
 
   /* ═══ Paper Trading Helpers ═══ */
   const logPaperTrade = (side, amount) => {
-    if (!amount || parseFloat(amount) <= 0) {
-      toast("Enter a valid amount", "error");
-      return;
-    }
+    if (!amount || parseFloat(amount) <= 0) { toast("Enter a valid amount", "error"); return; }
+    if (parseFloat(amount) > paperBalance) { toast("Insufficient paper balance", "error"); return; }
+    
+    setPaperBalance(p => {
+      const nb = p - parseFloat(amount);
+      localStorage.setItem("lp_paper_balance", nb);
+      return nb;
+    });
+
+    const biddingRound = rounds[currentEpoch] || null;
     const newTrade = {
       id: Date.now(),
-      epoch: currentEpoch,
-      side,
-      amount: parseFloat(amount),
-      entryPrice: ltcPrice,
-      status: "Open",
+      epoch: currentEpoch, side, amount: parseFloat(amount), entryPrice: ltcPrice, status: "Open",
       lockTimestamp: biddingRound ? biddingRound.lockTimestamp : Math.floor(Date.now() / 1000) + 300,
       closeTimestamp: biddingRound ? biddingRound.closeTimestamp : Math.floor(Date.now() / 1000) + 600,
-      result: null,
-      pnl: 0,
-      payout: 0,
-      closePrice: 0,
-      lockPrice: 0
+      result: null, pnl: 0, payout: 0, closePrice: 0, lockPrice: 0
     };
     const updated = [...paperTrades, newTrade];
     setPaperTrades(updated);
     localStorage.setItem("lp_paper_trades", JSON.stringify(updated));
-    setTradeQty("");
     toast(`Paper bet placed: ${side} ${amount} zkLTC`, "success");
   };
 
@@ -525,39 +680,24 @@ export default function App() {
     if (confirm("Are you sure you want to clear your Paper Trading history?")) {
       setPaperTrades([]);
       localStorage.removeItem("lp_paper_trades");
+      setPaperBalance(settings.paperStartBalance);
+      localStorage.setItem("lp_paper_balance", settings.paperStartBalance);
       toast("Paper history cleared", "info");
     }
   };
 
-  const getPaperStats = () => {
-    const closed = paperTrades.filter(t => t.status === "Closed");
-    const total = paperTrades.length;
-    const wins = closed.filter(t => t.result === "Win").length;
-    const winRate = closed.length > 0 ? ((wins / closed.length) * 100).toFixed(1) : "0.0";
-    let totalPnL = 0;
-    closed.forEach(t => { totalPnL += t.pnl; });
-    return { total, winRate, totalPnL: totalPnL.toFixed(1) };
-  };
-
-  // Auto-settle paper trades when rounds finalize
   useEffect(() => {
     if (paperTrades.length === 0) return;
     let changed = false;
+    let newBal = paperBalance;
     const updated = paperTrades.map(trade => {
       if (trade.status !== "Open") return trade;
       const r = rounds[trade.epoch];
       if (r && r.oracleCalled) {
         changed = true;
         if (r.cancelled) {
-          return {
-            ...trade,
-            status: "Closed",
-            result: "Cancel",
-            payout: trade.amount,
-            pnl: 0,
-            closePrice: r.closePrice,
-            lockPrice: r.lockPrice
-          };
+          newBal += trade.amount;
+          return { ...trade, status: "Closed", result: "Cancel", payout: trade.amount, pnl: 0, closePrice: r.closePrice, lockPrice: r.lockPrice };
         }
         const winner = r.closePrice > r.lockPrice ? "Bull" : "Bear";
         if (trade.side === winner) {
@@ -565,27 +705,14 @@ export default function App() {
           const rewardAmount = parseFloat(r.rewardAmount);
           const payout = winPool > 0 ? (trade.amount * rewardAmount) / winPool : trade.amount;
           const pnl = ((payout - trade.amount) / trade.amount) * 100;
+          newBal += payout;
+          playSound('win');
           toast(`🏆 Paper Trade Win! Round #${trade.epoch} paid +${pnl.toFixed(1)}%`, "success");
-          return {
-            ...trade,
-            status: "Closed",
-            result: "Win",
-            payout,
-            pnl,
-            closePrice: r.closePrice,
-            lockPrice: r.lockPrice
-          };
+          addNotification(`Paper Trade Win`, `Round #${trade.epoch} paid +${pnl.toFixed(1)}%`, 'success');
+          return { ...trade, status: "Closed", result: "Win", payout, pnl, closePrice: r.closePrice, lockPrice: r.lockPrice };
         } else {
           toast(`💀 Paper Trade Loss. Round #${trade.epoch} closed against you.`, "error");
-          return {
-            ...trade,
-            status: "Closed",
-            result: "Loss",
-            payout: 0,
-            pnl: -100,
-            closePrice: r.closePrice,
-            lockPrice: r.lockPrice
-          };
+          return { ...trade, status: "Closed", result: "Loss", payout: 0, pnl: -100, closePrice: r.closePrice, lockPrice: r.lockPrice };
         }
       }
       return trade;
@@ -594,8 +721,10 @@ export default function App() {
     if (changed) {
       setPaperTrades(updated);
       localStorage.setItem("lp_paper_trades", JSON.stringify(updated));
+      setPaperBalance(newBal);
+      localStorage.setItem("lp_paper_balance", newBal);
     }
-  }, [rounds, paperTrades, toast]);
+  }, [rounds, paperTrades, toast, paperBalance, playSound, addNotification]);
 
   /* ═══ Send Chat ═══ */
   const sendChat = () => {
@@ -609,20 +738,138 @@ export default function App() {
     setChatInput("");
   };
 
-  /* ═══ Orderbook click fills price ═══ */
-  const fillPrice = (price) => {
-    setLimitPrice(price.toFixed(4));
-    setTradeType("Limit");
-    setActiveTab("trade");
+  /* ═══ Watchlist & Filter Helpers ═══ */
+  const toggleWatchlist = (epoch, e) => {
+    e.stopPropagation();
+    setWatchlist(prev => {
+      const next = new Set(prev);
+      if (next.has(epoch)) next.delete(epoch); else next.add(epoch);
+      localStorage.setItem("lp_watchlist", JSON.stringify([...next]));
+      return next;
+    });
   };
 
-  /* ═══ Derived values ═══ */
-  const liveRound = rounds[currentEpoch - 1] || null;
+  /* ═══ Export CSV ═══ */
+  const exportCSV = () => {
+    let csv = "ID,Epoch,Side,Amount,EntryPrice,Status,Result,PnL,Payout,ClosePrice,LockPrice\n";
+    paperTrades.forEach(t => {
+      csv += `${t.id},${t.epoch},${t.side},${t.amount},${t.entryPrice},${t.status},${t.result||''},${t.pnl},${t.payout},${t.closePrice},${t.lockPrice}\n`;
+    });
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('hidden', '');
+    a.setAttribute('href', url);
+    a.setAttribute('download', 'paper_trades.csv');
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  /* ═══ Backtest Engine ═══ */
+  const [isBacktesting, setIsBacktesting] = useState(false);
+  const [backtestResults, setBacktestResults] = useState(null);
+  const backtestChartRef = useRef(null);
+  const backtestChartContainerRef = useRef(null);
+  const backtestLineSeriesRef = useRef(null);
+
+  const runBacktest = async (strategy) => {
+    setIsBacktesting(true);
+    setBacktestResults(null);
+    try {
+      const rpcProvider = new ethers.JsonRpcProvider(LITVM_RPC);
+      const contract = new ethers.Contract(settings.contractAddr, LITE_PREDICT_ABI, rpcProvider);
+      const epoch = currentEpoch;
+      const results = [];
+      let balance = settings.paperStartBalance;
+      let peak = balance;
+      let maxDrawdown = 0;
+      
+      for (let ep = Math.max(1, epoch - 50); ep < epoch - 1; ep++) {
+        try {
+          const r = await contract.rounds(ep);
+          const round = {
+            epoch: ep, lockPrice: Number(r[4]) / 1e18, closePrice: Number(r[5]) / 1e18,
+            bullAmount: ethers.formatEther(r[7]), bearAmount: ethers.formatEther(r[8]),
+            totalAmount: ethers.formatEther(r[6]), oracleCalled: r[11], cancelled: r[12]
+          };
+          if (!round.oracleCalled || round.cancelled) continue;
+          
+          let side;
+          if (strategy === 'always_bull') side = 'Bull';
+          else if (strategy === 'always_bear') side = 'Bear';
+          else if (strategy === 'momentum') {
+            side = round.lockPrice > (results.length > 0 ? results[results.length-1].closePrice : round.lockPrice) ? 'Bull' : 'Bear';
+          } else { 
+            const bullAmt = parseFloat(round.bullAmount);
+            const bearAmt = parseFloat(round.bearAmount);
+            side = bullAmt > bearAmt ? 'Bear' : 'Bull';
+          }
+          
+          const betAmt = balance * 0.05; 
+          const winPool = side === 'Bull' ? parseFloat(round.bullAmount) : parseFloat(round.bearAmount);
+          const totalPool = parseFloat(round.totalAmount);
+          const winner = round.closePrice > round.lockPrice ? 'Bull' : 'Bear';
+          
+          let pnl = -betAmt;
+          let result = 'Loss';
+          if (winner === side && winPool > 0) {
+            const payout = betAmt * (totalPool * 0.98) / winPool;
+            pnl = payout - betAmt;
+            result = 'Win';
+          }
+          
+          balance += pnl;
+          peak = Math.max(peak, balance);
+          const drawdown = (peak - balance) / peak * 100;
+          maxDrawdown = Math.max(maxDrawdown, drawdown);
+          
+          results.push({ epoch: ep, side, result, pnl, balance, closePrice: round.closePrice, lockPrice: round.lockPrice, time: ep });
+        } catch (_) {}
+      }
+      setBacktestResults({ results, finalBalance: balance, maxDrawdown, strategy });
+    } catch(e) { toast("Backtest failed", "error"); }
+    setIsBacktesting(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'backtest' && backtestResults && backtestChartContainerRef.current) {
+      if (!backtestChartRef.current) {
+        const chart = createChart(backtestChartContainerRef.current, {
+          layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: "#888" },
+          grid: { vertLines: { visible: false }, horzLines: { color: "#222" } },
+          width: backtestChartContainerRef.current.offsetWidth,
+          height: 250,
+        });
+        const lineSeries = chart.addLineSeries({ color: '#3b82f6', lineWidth: 2 });
+        backtestChartRef.current = chart;
+        backtestLineSeriesRef.current = lineSeries;
+      }
+      const data = backtestResults.results.map((r, i) => ({ time: i, value: r.balance }));
+      backtestLineSeriesRef.current.setData(data);
+      backtestChartRef.current.timeScale().fitContent();
+    }
+  }, [activeTab, backtestResults]);
+
+  /* ═══ Slippage / Est Payout ═══ */
   const biddingRound = rounds[currentEpoch] || null;
+  const liveRound = rounds[currentEpoch - 1] || null;
   const endedRound = rounds[currentEpoch - 2] || null;
 
-  const bullPct = biddingRound ? (parseFloat(biddingRound.bullAmount) / (parseFloat(biddingRound.totalAmount) || 1) * 100) : 50;
-  const bearPct = 100 - bullPct;
+  const estTradeCalc = () => {
+    if (!tradeQty || !biddingRound) return { payout: "0.00", mult: "0.00", impact: "0.0" };
+    const qty = parseFloat(tradeQty);
+    const total = parseFloat(biddingRound.totalAmount) + qty;
+    const pool = (tradeSide==="Bull" ? parseFloat(biddingRound.bullAmount) : parseFloat(biddingRound.bearAmount)) + qty;
+    if (pool === 0) return { payout: "0.00", mult: "0.00", impact: "0.0" };
+    const mult = (total * 0.98) / pool;
+    const origPool = tradeSide==="Bull" ? parseFloat(biddingRound.bullAmount) : parseFloat(biddingRound.bearAmount);
+    const origTotal = parseFloat(biddingRound.totalAmount);
+    const origMult = origPool > 0 ? (origTotal * 0.98) / origPool : mult;
+    const impact = origMult > 0 ? ((origMult - mult) / origMult * 100).toFixed(1) : "0.0";
+    return { payout: (qty * mult).toFixed(4), mult: mult.toFixed(2), impact };
+  };
+  const tradeEst = estTradeCalc();
 
   const getMult = (round, side) => {
     if (!round) return "—";
@@ -632,20 +879,124 @@ export default function App() {
     return `${(total * 0.98 / pool).toFixed(2)}x`;
   };
 
-  const estPayout = () => {
-    if (!tradeQty || !biddingRound) return "0.0000";
-    const qty = parseFloat(tradeQty);
-    const total = parseFloat(biddingRound.totalAmount) + qty;
-    const pool = (tradeSide==="Bull" ? parseFloat(biddingRound.bullAmount) : parseFloat(biddingRound.bearAmount)) + qty;
-    const mult = (total * 0.98) / pool;
-    return (qty * mult).toFixed(4);
+  /* ═══ Sub-components ═══ */
+  const RoundCard = ({ r, type }) => {
+    if (!r) return (
+      <div className="round-card skeleton">
+        <div className="skeleton-line" style={{width: '60%'}}></div>
+        <div className="skeleton-line"></div>
+        <div className="skeleton-line"></div>
+      </div>
+    );
+    const score = calcRoundScore(r);
+    const scoreColor = score >= 3 ? "#22c55e" : score >= 1.8 ? "#f59e0b" : "#ef4444";
+    const isWatch = watchlist.has(r.epoch);
+
+    return (
+      <div className={`round-card ${type}`} onClick={() => setContextModalRound(r)}>
+        <div className="rc-header">
+          <span className="rc-epoch">#{r.epoch}</span>
+          <span className={`rc-badge ${type}`}>{type.toUpperCase()}</span>
+          <span className="rc-star" onClick={(e) => toggleWatchlist(r.epoch, e)}>{isWatch ? '⭐' : '☆'}</span>
+        </div>
+        <div className="rc-pools">
+          <div className="rc-pool bull">Bull: {getMult(r, 'Bull')}</div>
+          <div className="rc-pool bear">Bear: {getMult(r, 'Bear')}</div>
+        </div>
+        <div className="rc-footer">
+          <span className="rc-total">Pool: {fmt4(r.totalAmount)}</span>
+          <span className="rc-score" style={{color: scoreColor, borderColor: scoreColor}}>★ {score}</span>
+        </div>
+      </div>
+    );
   };
 
-  const maxAskTotal = Math.max(...orderbook.asks.map(a => a.total), 1);
-  const maxBidTotal = Math.max(...orderbook.bids.map(b => b.total), 1);
-
   return (
-    <div className="app">
+    <div className={`app ${settings.isDarkTheme ? '' : 'light-theme'}`}>
+      <style>{`
+        .light-theme {
+          --bg-main: #f8fafc;
+          --bg-panel: #ffffff;
+          --bg-input: #f1f5f9;
+          --border: #e2e8f0;
+          --text-primary: #0f172a;
+          --text-secondary: #64748b;
+        }
+        :root {
+          --bg-main: #0a0a0a;
+          --bg-panel: #111111;
+          --bg-input: #1a1a1a;
+          --border: #222222;
+          --text-primary: #ffffff;
+          --text-secondary: #888888;
+        }
+        .app { display: flex; flex-direction: column; height: 100vh; background: var(--bg-main); color: var(--text-primary); font-family: -apple-system, system-ui, sans-serif; }
+        .topbar { display: flex; align-items: center; padding: 0 16px; height: 50px; background: var(--bg-panel); border-bottom: 1px solid var(--border); }
+        .topbar-brand { display: flex; align-items: center; gap: 8px; font-weight: bold; }
+        .topbar-divider { width: 1px; height: 24px; background: var(--border); margin: 0 12px; }
+        .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+        .main-content { display: flex; flex-direction: column; flex: 1; overflow: hidden; padding: 8px; gap: 8px; }
+        .chart-section { flex: 1; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px; display: flex; flex-direction: column; position: relative; }
+        .chart-toolbar { display: flex; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+        .chart-canvas-area { flex: 1; position: relative; }
+        .rounds-row { display: flex; gap: 8px; height: 100px; flex-shrink: 0; }
+        .round-card { flex: 1; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px; padding: 8px; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; justify-content: space-between; }
+        .round-card:hover { border-color: #3b82f6; }
+        .round-card.skeleton { animation: pulse 1.5s infinite; }
+        .rc-header { display: flex; justify-content: space-between; align-items: center; }
+        .rc-badge { font-size: 10px; padding: 2px 4px; border-radius: 2px; }
+        .rc-badge.bidding { background: #3b82f622; color: #3b82f6; }
+        .rc-badge.live { background: #f59e0b22; color: #f59e0b; }
+        .rc-badge.ended { background: #64748b22; color: #64748b; }
+        .rc-pools { display: flex; justify-content: space-between; font-size: 13px; margin: 8px 0; }
+        .rc-pool.bull { color: #22c55e; } .rc-pool.bear { color: #ef4444; }
+        .rc-footer { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-secondary); }
+        .rc-score { border: 1px solid; padding: 1px 4px; border-radius: 4px; font-weight: bold; }
+        .bottom-panels { display: flex; gap: 8px; height: 35%; flex-shrink: 0; }
+        .panel { flex: 1; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px; display: flex; flex-direction: column; overflow: hidden; }
+        .panel-header { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid var(--border); background: var(--bg-main); font-weight: bold; }
+        .panel-body { flex: 1; overflow-y: auto; padding: 8px; }
+        .news-item { padding: 8px 0; border-bottom: 1px solid var(--border); }
+        .news-item:last-child { border-bottom: none; }
+        .news-tag { font-size: 10px; padding: 2px 4px; border-radius: 2px; margin-right: 6px; }
+        .news-tag.litvm { background: #3b82f622; color: #3b82f6; }
+        .news-tag.litecoin { background: #8b5cf622; color: #8b5cf6; }
+        .news-title { font-size: 13px; margin: 4px 0; }
+        .news-meta { font-size: 11px; color: var(--text-secondary); display: flex; gap: 4px; }
+        .btn { padding: 6px 12px; border-radius: 4px; cursor: pointer; border: none; font-size: 13px; font-weight: bold; }
+        .btn-primary { background: #3b82f6; color: white; }
+        .btn-secondary { background: var(--bg-input); color: var(--text-primary); }
+        .btn-ghost { background: transparent; color: var(--text-primary); }
+        .tabs { display: flex; border-bottom: 1px solid var(--border); }
+        .tab { flex: 1; padding: 8px; text-align: center; cursor: pointer; font-size: 13px; }
+        .tab.active { border-bottom: 2px solid #3b82f6; font-weight: bold; }
+        .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; }
+        .toast { padding: 12px 16px; border-radius: 4px; background: var(--bg-panel); border: 1px solid var(--border); display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .toast.success { border-left: 4px solid #22c55e; }
+        .toast.error { border-left: 4px solid #ef4444; }
+        .toast.warning { border-left: 4px solid #f59e0b; }
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+        .modal { background: var(--bg-panel); border-radius: 8px; width: 400px; max-width: 90%; padding: 20px; border: 1px solid var(--border); box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+        .modal-header { display: flex; justify-content: space-between; font-size: 18px; font-weight: bold; margin-bottom: 16px; }
+        .modal-close { cursor: pointer; color: var(--text-secondary); }
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; font-size: 12px; margin-bottom: 4px; color: var(--text-secondary); }
+        .form-control { width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-input); color: var(--text-primary); }
+        .trade-panel { display: flex; flex-direction: column; gap: 12px; }
+        .trade-btn { flex: 1; padding: 12px; font-size: 16px; font-weight: bold; border-radius: 4px; border: none; cursor: pointer; color: white; }
+        .trade-btn.bull { background: #22c55e; } .trade-btn.bear { background: #ef4444; }
+        .table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .table th, .table td { padding: 6px; text-align: right; border-bottom: 1px solid var(--border); }
+        .table th:first-child, .table td:first-child { text-align: left; }
+        .icon-btn { cursor: pointer; padding: 4px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; }
+        .icon-btn:hover { background: var(--bg-input); }
+        .notif-dropdown { position: absolute; top: 40px; right: 0; width: 300px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 100; max-height: 400px; overflow-y: auto; }
+        .notif-item { padding: 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
+        .notif-item.unread { background: var(--bg-input); font-weight: bold; }
+        .skeleton-line { height: 12px; background: var(--bg-input); border-radius: 4px; margin-bottom: 6px; }
+        @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+      `}</style>
+
       {/* ═══ TOASTS ═══ */}
       <div className="toast-container">
         {toasts.map(t => (
@@ -656,63 +1007,143 @@ export default function App() {
         ))}
       </div>
 
+      {/* ═══ SETTINGS MODAL ═══ */}
+      {showSettings && (
+        <div className="modal-overlay" onClick={() => setShowSettings(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><span>Settings</span><span className="modal-close" onClick={() => setShowSettings(false)}>✕</span></div>
+            <div className="form-group">
+              <label>Theme</label>
+              <button className="btn btn-secondary" onClick={() => updateSetting('isDarkTheme', !settings.isDarkTheme)}>
+                {settings.isDarkTheme ? '🌙 Dark Mode' : '☀️ Light Mode'}
+              </button>
+            </div>
+            <div className="form-group">
+              <label>Alerts & Notifications</label>
+              <label style={{display:'flex', alignItems:'center', gap:8}}><input type="checkbox" checked={settings.soundEnabled} onChange={e => updateSetting('soundEnabled', e.target.checked)}/> Sound Alerts</label>
+              <label style={{display:'flex', alignItems:'center', gap:8}}><input type="checkbox" checked={settings.desktopNotifEnabled} onChange={requestNotifPermission}/> Desktop Notifications</label>
+            </div>
+            <div className="form-group">
+              <label>High-Conviction Alert Threshold (Score)</label>
+              <input type="number" step="0.1" className="form-control" value={settings.alertThreshold} onChange={e => updateSetting('alertThreshold', e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Discord Webhook URL (for alerts)</label>
+              <input type="text" className="form-control" placeholder="https://discord.com/api/webhooks/..." value={settings.webhookUrl} onChange={e => updateSetting('webhookUrl', e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Auto-Scan Interval</label>
+              <select className="form-control" value={settings.scanInterval} onChange={e => updateSetting('scanInterval', Number(e.target.value))}>
+                <option value={30}>30 Seconds</option><option value={60}>1 Minute</option><option value={120}>2 Minutes</option><option value={300}>5 Minutes</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Contract Address</label>
+              <input type="text" className="form-control" value={settings.contractAddr} onChange={e => updateSetting('contractAddr', e.target.value)} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ ROUND CONTEXT MODAL ═══ */}
+      {contextModalRound && (
+        <div className="modal-overlay" onClick={() => setContextModalRound(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><span>Round #{contextModalRound.epoch} Details</span><span className="modal-close" onClick={() => setContextModalRound(null)}>✕</span></div>
+            <div style={{display:'flex', justifyContent:'space-between', marginBottom: 12}}>
+              <span>Pool Size: {fmt4(contextModalRound.totalAmount)}</span>
+              <span style={{fontWeight:'bold', color: '#f59e0b'}}>Score: {calcRoundScore(contextModalRound)}</span>
+            </div>
+            <div style={{display:'flex', justifyContent:'space-between', marginBottom: 12}}>
+              <span className="rc-pool bull">Bull: {getMult(contextModalRound, 'Bull')} ({fmt4(contextModalRound.bullAmount)})</span>
+              <span className="rc-pool bear">Bear: {getMult(contextModalRound, 'Bear')} ({fmt4(contextModalRound.bearAmount)})</span>
+            </div>
+            <div className="form-group">
+              <div style={{display:'flex', gap:8}}>
+                <button className="btn btn-secondary" style={{flex:1}} onClick={() => window.open(`https://www.google.com/search?q=LTC+USD+prediction`, '_blank')}>🔍 News</button>
+                <button className="btn btn-secondary" style={{flex:1}} onClick={() => window.open(`https://twitter.com/search?q=LTC+USD`, '_blank')}>🐦 Twitter</button>
+              </div>
+            </div>
+            {contextModalRound.epoch === currentEpoch && (
+              <div style={{display:'flex', gap:8, marginTop: 16}}>
+                <button className="trade-btn bull" onClick={() => { setTradeSide('Bull'); setActiveTab('trade'); setContextModalRound(null); }}>Trade Bull</button>
+                <button className="trade-btn bear" onClick={() => { setTradeSide('Bear'); setActiveTab('trade'); setContextModalRound(null); }}>Trade Bear</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ HIGH CONVICTION ALERT MODAL ═══ */}
+      {hcAlert && (
+        <div className="modal-overlay" onClick={() => setHcAlert(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{border: '2px solid #f59e0b', boxShadow: '0 0 20px rgba(245,158,11,0.4)'}}>
+            <div className="modal-header" style={{color: '#f59e0b'}}>🚨 HIGH CONVICTION ALERT</div>
+            <p style={{fontSize: 16, marginBottom: 16}}>
+              Round #{hcAlert.epoch} is showing a massive <b>{hcAlert.edge}</b> edge! <br/><br/>
+              Opportunity Score: <b>{hcAlert.score}</b> (Threshold: {settings.alertThreshold})
+            </p>
+            <div style={{display:'flex', gap:8}}>
+              <button className={`trade-btn ${hcAlert.edge.toLowerCase()}`} onClick={() => { setTradeSide(hcAlert.edge); setActiveTab('trade'); setHcAlert(null); }}>
+                Trade {hcAlert.edge} Now
+              </button>
+              <button className="btn btn-secondary" onClick={() => setHcAlert(null)}>Dismiss</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ═══ TOPBAR ═══ */}
       <header className="topbar">
-        <div className="topbar-brand">
-          <div className="brand-logo">LP</div>
-          <span className="brand-name">LitePredict</span>
+        <div className="topbar-brand"><div className="brand-logo" style={{background: '#3b82f6', color: 'white', padding: '2px 6px', borderRadius: 4}}>LP</div><span className="brand-name">LitePredict v2.0</span></div>
+        <div className="topbar-divider" />
+
+        <div style={{display: 'flex', alignItems: 'center', gap: 6, fontSize: 12}}>
+          <div style={{width: 8, height: 8, borderRadius: '50%', background: isScanning ? '#f59e0b' : '#22c55e', animation: isScanning ? 'pulse 1s infinite' : 'none'}} />
+          <span style={{color: 'var(--text-secondary)'}}>{isScanning ? 'SCANNING...' : 'LIVE'}</span>
         </div>
         <div className="topbar-divider" />
 
-        <div className="market-selector">
-          <span className="market-pair">LTC/USD</span>
-          <span className="market-tag">LitVM</span>
-        </div>
-
-        <span className={`market-price ${priceDir === "up" ? "bull" : priceDir === "down" ? "bear" : ""}`}>
+        <span className={`market-price ${priceDir === "up" ? "bull" : priceDir === "down" ? "bear" : ""}`} style={{fontWeight: 'bold', fontSize: 16, color: priceDir==='up'?'#22c55e':priceDir==='down'?'#ef4444':''}}>
           ${fmt4(ltcPrice)}
         </span>
-        <span className={`market-change ${priceChange24h >= 0 ? "bull" : "bear"}`} style={{marginLeft:8}}>
-          {priceChange24h >= 0 ? "+" : ""}{priceChange24h.toFixed(2)}%
-        </span>
-
-        <div className="topbar-stats">
-          <div className="stat-cell">
-            <span className="stat-label">24h High</span>
-            <span className="stat-value" style={{color:"var(--bull)"}}>${high24h.toFixed(2)}</span>
-          </div>
-          <div className="stat-cell">
-            <span className="stat-label">24h Low</span>
-            <span className="stat-value" style={{color:"var(--bear)"}}>${low24h.toFixed(2)}</span>
-          </div>
-          <div className="stat-cell">
-            <span className="stat-label">24h Volume</span>
-            <span className="stat-value">{vol24h} LTC</span>
-          </div>
-          <div className="stat-cell">
-            <span className="stat-label">Round</span>
-            <span className="stat-value">#{currentEpoch || "—"}</span>
-          </div>
-          {claimableEpochs.length > 0 && (
-            <button className="btn btn-primary" style={{fontSize:11,padding:"5px 10px"}} onClick={claimAll}>
-              🎉 Claim {claimableEpochs.length} Reward{claimableEpochs.length > 1 ? "s" : ""}
-            </button>
-          )}
+        
+        <div className="topbar-stats" style={{display:'flex', gap: 16, marginLeft: 16, fontSize: 12}}>
+          <div><span style={{color:'var(--text-secondary)'}}>Round</span> <b>#{currentEpoch || "—"}</b></div>
+          <div><span style={{color:'var(--text-secondary)'}}>Next Scan:</span> <b>{scanCountdown}s</b></div>
+          <button className="btn btn-ghost" style={{padding: '2px 6px', fontSize: 11, border: '1px solid var(--border)'}} onClick={loadData}>🔄 Scan Now</button>
         </div>
 
-        <div className="topbar-right">
-          {/* Faucet button - always visible */}
-          <a
-            href="https://liteforge.hub.caldera.xyz"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn btn-ghost"
-            style={{display:"flex",alignItems:"center",gap:5,color:"var(--bull)",border:"1px solid var(--bull-border)",textDecoration:"none",fontSize:12}}
-            title="Get free testnet zkLTC from LitVM faucet"
-          >
-            <span>🚰</span>
-            <span>Get zkLTC</span>
+        <div className="topbar-right" style={{position: 'relative'}}>
+          <a href="https://liteforge.hub.caldera.xyz" target="_blank" rel="noopener noreferrer" className="btn btn-ghost" style={{display:"flex",alignItems:"center",gap:5,color:"#3b82f6",border:"1px solid #3b82f6",textDecoration:"none",fontSize:12}}>
+            🚰 Get zkLTC
           </a>
+          
+          <div className="icon-btn" onClick={() => updateSetting('soundEnabled', !settings.soundEnabled)} title="Toggle Sound">
+            {settings.soundEnabled ? '🔔' : '🔕'}
+          </div>
+
+          <div className="icon-btn" style={{position: 'relative'}} onClick={() => setShowNotifications(!showNotifications)}>
+            📫 {unreadNotifs > 0 && <div style={{position:'absolute', top:0, right:0, background:'#ef4444', color:'white', fontSize:9, borderRadius:'50%', width:14, height:14, display:'flex', alignItems:'center', justifyContent:'center'}}>{unreadNotifs}</div>}
+          </div>
+          {showNotifications && (
+            <div className="notif-dropdown">
+              <div style={{display:'flex', justifyContent:'space-between', padding: 8, borderBottom: '1px solid var(--border)', background: 'var(--bg-main)'}}>
+                <b>Notifications</b>
+                <span style={{fontSize: 11, color: '#3b82f6', cursor: 'pointer'}} onClick={markAllRead}>Mark all read</span>
+              </div>
+              {notifications.length === 0 ? <div style={{padding: 16, textAlign: 'center', color: 'var(--text-secondary)'}}>No notifications</div> :
+                notifications.map(n => (
+                  <div key={n.id} className={`notif-item ${!n.read ? 'unread' : ''}`}>
+                    <div style={{fontWeight: 'bold'}}>{n.title}</div>
+                    <div style={{color: 'var(--text-secondary)', margin: '4px 0'}}>{n.body}</div>
+                    <div style={{fontSize: 10, color: '#888'}}>{n.time}</div>
+                  </div>
+                ))}
+            </div>
+          )}
+
+          <div className="icon-btn" onClick={() => setShowSettings(true)} title="Settings">⚙️</div>
 
           <div className="topbar-divider" />
 
@@ -720,16 +1151,13 @@ export default function App() {
             chainId !== LITVM_CHAIN_ID ? (
               <button className="btn btn-secondary" onClick={switchNetwork}>Switch to LitVM</button>
             ) : (
-              <div className="wallet-badge">
-                <div className="wallet-dot" />
+              <div style={{display:'flex', alignItems:'center', gap: 6, background: 'var(--bg-input)', padding: '4px 8px', borderRadius: 4, fontSize: 13, border: '1px solid var(--border)'}}>
+                <div style={{width:8, height:8, borderRadius:'50%', background:'#22c55e'}} />
                 {shortAddr(account)}
               </div>
             )
           ) : (
-            <>
-              <button className="btn btn-secondary" onClick={connectWallet}>Log in</button>
-              <button className="btn btn-primary" onClick={connectWallet}>Connect Wallet</button>
-            </>
+            <button className="btn btn-primary" onClick={connectWallet}>Connect Wallet</button>
           )}
         </div>
       </header>
@@ -738,475 +1166,263 @@ export default function App() {
       <div className="main-content">
 
         {/* ── CHART SECTION ── */}
-        <div className="chart-section">
+        <div className="chart-section" style={{flex: 1.5}}>
           <div className="chart-toolbar">
-            {["Candles","Line","Area"].map(t => (
-              <button key={t} className={`chart-type-btn ${chartType===t?"active":""}`} onClick={() => setChartType(t)}>{t}</button>
-            ))}
-            <div className="topbar-divider" style={{margin:"0 6px"}} />
-            <div className="interval-group">
-              {["1m","5m","15m","1h","4h","1d"].map(iv => (
-                <button key={iv} className={`interval-btn ${interval===iv?"active":""}`} onClick={() => setInterval2(iv)}>{iv}</button>
+            <div style={{display:'flex', gap:4}}>
+              {["Candles","Line","Area"].map(t => (
+                <button key={t} className="btn btn-ghost" style={{background: chartType===t ? 'var(--bg-input)' : 'transparent'}} onClick={() => setChartType(t)}>{t}</button>
               ))}
             </div>
           </div>
-
           <div className="chart-canvas-area">
             <div id="tv-chart" ref={chartContainerRef} style={{width:"100%",height:"100%"}} />
-
-            {/* Live price indicator */}
-            <div className="price-indicator">
-              <div className="live-dot" />
-              <span style={{fontSize:11,color:"var(--text-secondary)"}}>LIVE</span>
-              <span style={{fontFamily:"monospace",fontWeight:600,fontSize:13}}>${fmt4(ltcPrice)}</span>
-            </div>
-
-            {/* Round countdown */}
-            <div className="round-overlay">
-              <span className="round-overlay-label">Round closes in</span>
-              <span className="round-overlay-time" style={{color: timeLeft < 30 ? "var(--bear)" : "var(--text-primary)"}}>
-                {fmtTime(timeLeft)}
-              </span>
-              <span className="round-overlay-epoch">Epoch #{currentEpoch || "—"}</span>
+            <div style={{position:'absolute', top: 16, left: 16, display:'flex', gap: 8, flexDirection:'column'}}>
+               <div style={{background: 'var(--bg-panel)', padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6}}>
+                 <div style={{width:6, height:6, borderRadius:'50%', background:'#ef4444', animation: 'pulse 1s infinite'}} />
+                 Closes in: <b style={{color: timeLeft < 30 ? '#ef4444' : 'inherit'}}>{fmtTime(timeLeft)}</b>
+               </div>
             </div>
           </div>
         </div>
 
+        {/* ── ROUND CARDS PANEL ── */}
+        <div className="rounds-row">
+          <RoundCard r={biddingRound} type="bidding" />
+          <RoundCard r={liveRound} type="live" />
+          <RoundCard r={endedRound} type="ended" />
+        </div>
+
         {/* ── BOTTOM 3 PANELS ── */}
-        <div className="bottom-panels">
+        <div className="bottom-panels" style={{flex: 1.2}}>
 
           {/* ── LEFT: NEWS ── */}
-          <div className="panel">
-            <div className="panel-header">
-              <span className="panel-title">News Feed</span>
-              <span className="panel-badge" style={{marginLeft:"auto"}}>Live</span>
+          <div className="panel" style={{flex: 1}}>
+            <div className="panel-header" style={{padding:0}}>
+              <div className="tabs">
+                {['all','litvm','litecoin','market','defi'].map(c => (
+                  <div key={c} className={`tab ${newsCategory===c ? 'active' : ''}`} style={{padding: '8px 4px', fontSize: 11}} onClick={() => setNewsCategory(c)}>
+                    {c.toUpperCase()}
+                  </div>
+                ))}
+              </div>
             </div>
             <div className="panel-body">
-              {NEWS_ITEMS.map(n => (
-                <div 
-                  className="news-item" 
-                  key={n.id}
-                  onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(n.title)}`, '_blank')}
-                  style={{cursor:"pointer"}}
-                  title="Click to verify news on Google"
-                >
-                  <span className={`news-tag ${n.tag}`}>{n.tagLabel}</span>
-                  <div className="news-title">{n.title}</div>
-                  <div className="news-meta">
-                    <span className="news-source">{n.source}</span>
-                    <span>·</span>
-                    <span>{n.time}</span>
+              {newsItems.filter(n => newsCategory === 'all' || n.tag === newsCategory).map(n => (
+                <div className="news-item" key={n.id}>
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
+                    <span className={`news-tag ${n.tag}`}>{n.tagLabel}</span>
+                    <div style={{display:'flex', gap:4}}>
+                      <span className="icon-btn" onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(n.title)}`, '_blank')} title="Google Search">🔍</span>
+                      <span className="icon-btn" onClick={() => window.open(`https://twitter.com/search?q=${encodeURIComponent(n.title)}`, '_blank')} title="Twitter Search">🐦</span>
+                    </div>
                   </div>
+                  <div className="news-title">{n.title}</div>
+                  <div className="news-meta"><span>{n.source}</span>·<span>{n.time}</span></div>
                 </div>
               ))}
             </div>
           </div>
 
           {/* ── CENTER: CHAT ── */}
-          <div className="panel" style={{borderRight:"1px solid var(--border)"}}>
-            <div className="panel-header">
-              <span className="panel-title">Community Chat</span>
-              <span style={{marginLeft:"auto",fontSize:10,color:"var(--text-muted)"}}>{chatMessages.length} messages</span>
+          <div className="panel" style={{flex: 1}}>
+            <div className="panel-header"><span className="panel-title">Community Chat</span></div>
+            <div className="panel-body" ref={chatBodyRef} style={{display:'flex', flexDirection:'column', gap:8}}>
+              {chatMessages.map(m => (
+                <div key={m.id} style={{fontSize: 12, lineHeight: 1.4}}>
+                  <div style={{display:'flex', alignItems:'center', gap:4, marginBottom: 2}}>
+                    <span>{m.avatar}</span>
+                    <span style={{fontWeight:'bold', color: m.color}}>{m.user}</span>
+                    {m.badge && <span style={{fontSize:9, background:'var(--bg-input)', padding:'1px 4px', borderRadius:2}}>{m.badge}</span>}
+                    <span style={{fontSize:10, color:'var(--text-secondary)', marginLeft:'auto'}}>{m.time}</span>
+                  </div>
+                  <div style={{color:'var(--text-primary)'}}>{m.text}</div>
+                </div>
+              ))}
             </div>
-
-            {/* Round info bar */}
-            {biddingRound && (
-              <div style={{padding:"8px 14px", borderBottom:"1px solid var(--border-subtle)", display:"flex", gap:12, alignItems:"center", flexShrink:0}}>
-                <div style={{flex:1}}>
-                  <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"var(--text-muted)",marginBottom:4}}>
-                    <span>🟢 Bull {bullPct.toFixed(0)}%</span>
-                    <span>Pool: {parseFloat(biddingRound.totalAmount).toFixed(3)} zkLTC</span>
-                    <span>🔴 Bear {bearPct.toFixed(0)}%</span>
-                  </div>
-                  <div style={{height:4,background:"var(--bear)",borderRadius:2,overflow:"hidden"}}>
-                    <div style={{height:"100%",width:`${bullPct}%`,background:"var(--bull)",transition:"width 0.5s"}} />
-                  </div>
-                </div>
-                <div style={{textAlign:"right"}}>
-                  <div style={{fontSize:10,color:"var(--text-muted)"}}>Payout</div>
-                  <div style={{fontSize:11,fontWeight:600,color:"var(--bull)"}}>
-                    {getMult(biddingRound, tradeSide)} {tradeSide}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* End round result */}
-            {endedRound && endedRound.oracleCalled && !endedRound.cancelled && (
-              <div className={`pred-result-banner ${endedRound.closePrice > endedRound.lockPrice ? "bull" : "bear"}`}>
-                <div>
-                  <div style={{fontSize:11,fontWeight:600}}>
-                    Round #{endedRound.epoch} Ended — {endedRound.closePrice > endedRound.lockPrice ? "🟢 BULL WINS" : "🔴 BEAR WINS"}
-                  </div>
-                  <div style={{fontSize:10,color:"var(--text-muted)"}}>
-                    ${endedRound.lockPrice.toFixed(4)} → ${endedRound.closePrice.toFixed(4)}
-                  </div>
-                </div>
-                {claimableEpochs.includes(endedRound.epoch) && (
-                  <button className="btn btn-primary" style={{fontSize:11,padding:"5px 10px"}} onClick={claimAll}>Claim</button>
-                )}
-              </div>
-            )}
-
-            <div className="panel-body" ref={chatBodyRef}>
-              <div className="chat-messages">
-                {chatMessages.map(m => (
-                  <div className="chat-msg" key={m.id}>
-                    <div className="chat-avatar" style={{background:`${m.color}22`, color:m.color}}>{m.avatar}</div>
-                    <div className="chat-content">
-                      <div className="chat-meta">
-                        <span className="chat-username" style={{color:m.color}}>{m.user}</span>
-                        {m.badge && <span className={`chat-badge ${m.badgeType}`}>{m.badge}</span>}
-                        <span className="chat-time">{m.time}</span>
-                      </div>
-                      <div className="chat-text" dangerouslySetInnerHTML={{__html: m.text.replace(/@(\w+)/g,'<em>@$1</em>').replace(/(https?:\/\/\S+)/g,'<em>$1</em>')}} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="chat-input-area">
-              <div className="chat-avatar" style={{background:"var(--bg-3)",color:"var(--text-muted)",width:28,height:28,flexShrink:0}}>
-                {account ? account[2].toUpperCase() : "?"}
-              </div>
-              <input
-                className="chat-input"
-                placeholder={account ? "Message the traders…" : "Connect wallet to chat"}
-                value={chatInput}
-                disabled={!account}
-                onChange={e => setChatInput(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && sendChat()}
-              />
-              <button className="btn-icon" onClick={sendChat} disabled={!account}>↑</button>
+            <div style={{padding: 8, borderTop: '1px solid var(--border)', display:'flex', gap:4}}>
+              <input type="text" className="form-control" placeholder="Type a message..." value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendChat()} />
+              <button className="btn btn-primary" onClick={sendChat}>Send</button>
             </div>
           </div>
 
-          {/* ── RIGHT: ORDERBOOK + TRADE ── */}
-          <div className="panel" style={{overflow:"hidden"}}>
-            {/* Tabs */}
-            <div className="order-tabs">
-              {["orderbook","trade","positions"].map(t => (
-                <button key={t} className={`order-tab ${activeTab===t?"active":""}`} onClick={() => setActiveTab(t)}>
-                  {t.charAt(0).toUpperCase()+t.slice(1)}
-                </button>
-              ))}
+          {/* ── RIGHT: TRADING & TABS ── */}
+          <div className="panel" style={{flex: 1.5}}>
+            <div className="tabs" style={{padding: 0, margin: 0, borderBottom: '1px solid var(--border)'}}>
+              <div className={`tab ${activeTab==='orderbook'?'active':''}`} onClick={()=>setActiveTab('orderbook')}>Book</div>
+              <div className={`tab ${activeTab==='trade'?'active':''}`} onClick={()=>setActiveTab('trade')}>Trade</div>
+              <div className={`tab ${activeTab==='positions'?'active':''}`} onClick={()=>setActiveTab('positions')}>Portfolio</div>
+              <div className={`tab ${activeTab==='watchlist'?'active':''}`} onClick={()=>setActiveTab('watchlist')}>Watchlist</div>
+              <div className={`tab ${activeTab==='backtest'?'active':''}`} onClick={()=>setActiveTab('backtest')}>Backtest</div>
             </div>
-
-            {/* ── ORDERBOOK TAB ── */}
-            {activeTab === "orderbook" && (
-              <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
-                <div className="ob-header">
-                  <span className="ob-col-label">Price (USD)</span>
-                  <span className="ob-col-label">Size (LTC)</span>
-                  <span className="ob-col-label">Total</span>
+            <div className="panel-body" style={{padding: activeTab==='trade'?16:0}}>
+              
+              {/* ORDERBOOK TAB */}
+              {activeTab === 'orderbook' && (
+                <div style={{display:'flex', width:'100%', height:'100%'}}>
+                  <div style={{flex:1, borderRight:'1px solid var(--border)'}}>
+                    <div style={{display:'flex', justifyContent:'space-between', padding:'4px 8px', fontSize:11, color:'var(--text-secondary)', borderBottom:'1px solid var(--border)'}}><span>Size</span><span>Price</span></div>
+                    {orderbook.asks.slice(-10).map((a, i) => (
+                      <div key={i} style={{display:'flex', justifyContent:'space-between', padding:'2px 8px', fontSize:12, position:'relative', cursor:'pointer'}} onClick={() => { setLimitPrice(a.price.toFixed(4)); setActiveTab('trade'); }}>
+                        <div style={{position:'absolute', right:0, top:0, bottom:0, width:`${(a.total/orderbook.asks[orderbook.asks.length-1].total)*100}%`, background:'#ef444422', zIndex:1}} />
+                        <span style={{zIndex:2}}>{a.size}</span><span style={{color:'#ef4444', zIndex:2}}>{a.price.toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{flex:1}}>
+                    <div style={{display:'flex', justifyContent:'space-between', padding:'4px 8px', fontSize:11, color:'var(--text-secondary)', borderBottom:'1px solid var(--border)'}}><span>Price</span><span>Size</span></div>
+                    {orderbook.bids.slice(0,10).map((b, i) => (
+                      <div key={i} style={{display:'flex', justifyContent:'space-between', padding:'2px 8px', fontSize:12, position:'relative', cursor:'pointer'}} onClick={() => { setLimitPrice(b.price.toFixed(4)); setActiveTab('trade'); }}>
+                        <div style={{position:'absolute', left:0, top:0, bottom:0, width:`${(b.total/orderbook.bids[orderbook.bids.length-1].total)*100}%`, background:'#22c55e22', zIndex:1}} />
+                        <span style={{color:'#22c55e', zIndex:2}}>{b.price.toFixed(2)}</span><span style={{zIndex:2}}>{b.size}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="panel-body">
-                  {/* ASKS */}
-                  {orderbook.asks.map((row, i) => (
-                    <div key={i} className="ob-row ask" onClick={() => fillPrice(row.price)}>
-                      <div className="ob-bar" style={{width:`${(row.total/maxAskTotal*100)}%`, right:0}} />
-                      <span className="ob-price ask">{row.price.toFixed(4)}</span>
-                      <span className="ob-size">{row.size.toFixed(3)}</span>
-                      <span className="ob-total">{row.total.toFixed(0)}</span>
-                    </div>
-                  ))}
+              )}
 
-                  {/* Spread */}
-                  <div className="ob-spread">
-                    <span className="ob-spread-label">Spread</span>
-                    <span className="ob-spread-val">${fmt4(ltcPrice)}</span>
-                    <span className="ob-spread-label">{((orderbook.asks[orderbook.asks.length-1]?.price - orderbook.bids[0]?.price) || 0).toFixed(4)}</span>
+              {/* TRADE TAB */}
+              {activeTab === 'trade' && (
+                <div className="trade-panel">
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                    <div className="tabs" style={{border: '1px solid var(--border)', borderRadius: 4, overflow: 'hidden'}}>
+                      <div className={`tab ${tradeSide==='Bull'?'active':''}`} style={{padding:'4px 12px', background: tradeSide==='Bull'?'#22c55e22':'', color: tradeSide==='Bull'?'#22c55e':''}} onClick={()=>setTradeSide('Bull')}>BULL</div>
+                      <div className={`tab ${tradeSide==='Bear'?'active':''}`} style={{padding:'4px 12px', background: tradeSide==='Bear'?'#ef444422':'', color: tradeSide==='Bear'?'#ef4444':''}} onClick={()=>setTradeSide('Bear')}>BEAR</div>
+                    </div>
+                    <label style={{display:'flex', alignItems:'center', gap:6, fontSize:12}}><input type="checkbox" checked={isPaperMode} onChange={e=>setIsPaperMode(e.target.checked)}/> Paper Mode</label>
+                  </div>
+                  <div className="form-group">
+                    <label>Amount (zkLTC)</label>
+                    <input type="number" className="form-control" placeholder="0.0" value={tradeQty} onChange={e => setTradeQty(e.target.value)} />
+                    {isPaperMode && <div style={{fontSize:11, color:'var(--text-secondary)', marginTop:4, textAlign:'right'}}>Paper Balance: {paperBalance.toFixed(2)}</div>}
+                  </div>
+                  
+                  <div style={{background: 'var(--bg-input)', padding: 12, borderRadius: 4, fontSize: 12, display: 'flex', flexDirection: 'column', gap: 6}}>
+                    <div style={{display:'flex', justifyContent:'space-between'}}><span>Est. Multiplier:</span> <b>{tradeEst.mult}x</b></div>
+                    <div style={{display:'flex', justifyContent:'space-between'}}><span>Price Impact:</span> <b style={{color: parseFloat(tradeEst.impact) > 5 ? '#ef4444' : ''}}>{tradeEst.impact}%</b></div>
+                    <div style={{display:'flex', justifyContent:'space-between'}}><span>Est. Payout:</span> <b style={{color: '#22c55e'}}>{tradeEst.payout} zkLTC</b></div>
                   </div>
 
-                  {/* BIDS */}
-                  {orderbook.bids.map((row, i) => (
-                    <div key={i} className="ob-row bid" onClick={() => fillPrice(row.price)}>
-                      <div className="ob-bar" style={{width:`${(row.total/maxBidTotal*100)}%`, right:0}} />
-                      <span className="ob-price bid">{row.price.toFixed(4)}</span>
-                      <span className="ob-size">{row.size.toFixed(3)}</span>
-                      <span className="ob-total">{row.total.toFixed(0)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* ── TRADE TAB ── */}
-            {activeTab === "trade" && (
-              <div className="trade-panel">
-                {/* Real / Paper Trading mode toggle */}
-                <div style={{display:"flex", background:"var(--bg-3)", margin:"10px 12px 0", borderRadius:"var(--radius-sm)", padding:2, gap:2}}>
-                  <button 
-                    onClick={() => setIsPaperMode(false)}
-                    style={{
-                      flex:1, border:"none", 
-                      background: !isPaperMode ? "var(--bg-2)" : "transparent", 
-                      color: !isPaperMode ? "var(--bull)" : "var(--text-muted)", 
-                      fontSize:11, padding:"6px 0", cursor:"pointer", borderRadius:3,
-                      fontWeight: 600, transition: "0.2s"
-                    }}
-                  >
-                    🔗 Real Trading (zkLTC)
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setIsPaperMode(true);
-                      toast("Paper Trading Mode enabled! Trades are simulated.", "info");
-                    }}
-                    style={{
-                      flex:1, border:"none", 
-                      background: isPaperMode ? "var(--bg-2)" : "transparent", 
-                      color: isPaperMode ? "#a78bfa" : "var(--text-muted)", 
-                      fontSize:11, padding:"6px 0", cursor:"pointer", borderRadius:3,
-                      fontWeight: 600, transition: "0.2s"
-                    }}
-                  >
-                    📝 Paper Trading (Practice)
+                  <button className={`trade-btn ${tradeSide.toLowerCase()}`} onClick={placeBet} disabled={loading}>
+                    {loading ? "Processing..." : `Place ${tradeSide} Bet`}
                   </button>
                 </div>
+              )}
 
-                {/* Bull / Bear */}
-                <div className="trade-side-tabs" style={{marginTop:10}}>
-                  <button
-                    className={`trade-side-btn ${tradeSide==="Bull"?"bull-active":""}`}
-                    onClick={() => setTradeSide("Bull")}
-                  >Bull ↑</button>
-                  <button
-                    className={`trade-side-btn ${tradeSide==="Bear"?"bear-active":""}`}
-                    onClick={() => setTradeSide("Bear")}
-                  >Bear ↓</button>
-                </div>
-
-                {/* Order type */}
-                <div className="trade-type-tabs">
-                  {["Market","Limit","Stop"].map(t => (
-                    <button key={t} className={`trade-type-btn ${tradeType===t?"active":""}`} onClick={() => setTradeType(t)}>{t}</button>
-                  ))}
-                </div>
-
-                <div className="trade-fields">
-                  {tradeType === "Limit" && (
-                    <div className="field-group">
-                      <span className="field-label">Limit Price</span>
-                      <div className="field-input-wrap">
-                        <input className="field-input" type="number" placeholder="0.0000" value={limitPrice} onChange={e => setLimitPrice(e.target.value)} />
-                        <span className="field-suffix">USD</span>
+              {/* POSITIONS TAB */}
+              {activeTab === 'positions' && (
+                <div style={{display:'flex', flexDirection:'column', height:'100%'}}>
+                  <div style={{display:'flex', borderBottom:'1px solid var(--border)'}}>
+                    <div className={`tab ${positionSubTab==='real'?'active':''}`} onClick={()=>setPositionSubTab('real')}>Real Trades</div>
+                    <div className={`tab ${positionSubTab==='paper'?'active':''}`} onClick={()=>setPositionSubTab('paper')}>Paper Trades</div>
+                  </div>
+                  
+                  {positionSubTab === 'real' && (
+                    <div style={{padding: 8, overflowY:'auto', flex: 1}}>
+                      {/* Summary Cards */}
+                      <div style={{display:'flex', gap:8, marginBottom:12}}>
+                        <div style={{flex:1, background:'var(--bg-input)', padding:8, borderRadius:4, textAlign:'center'}}>
+                          <div style={{fontSize:11, color:'var(--text-secondary)'}}>Claimable</div>
+                          <div style={{fontWeight:'bold', color:'#22c55e'}}>{claimableEpochs.length} Rounds</div>
+                        </div>
+                        <div style={{flex:1, background:'var(--bg-input)', padding:8, borderRadius:4, textAlign:'center'}}>
+                          <div style={{fontSize:11, color:'var(--text-secondary)'}}>Active</div>
+                          <div style={{fontWeight:'bold'}}>{Object.keys(userBets).filter(ep => Number(ep) >= currentEpoch - 1).length} Positions</div>
+                        </div>
                       </div>
+                      
+                      <table className="table">
+                        <thead><tr><th>Epoch</th><th>Side</th><th>Amount</th><th>Status</th></tr></thead>
+                        <tbody>
+                          {Object.entries(userBets).reverse().map(([ep, b]) => (
+                            <tr key={ep}>
+                              <td>#{ep}</td>
+                              <td style={{color: b.position==='Bull'?'#22c55e':'#ef4444'}}>{b.position}</td>
+                              <td>{b.amount}</td>
+                              <td>{b.claimed ? 'Claimed' : claimableEpochs.includes(Number(ep)) ? <button className="btn btn-primary" style={{padding:'2px 6px', fontSize:10}} onClick={claimAll}>Claim</button> : 'Pending'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   )}
 
-                  <div className="field-group">
-                    <span className="field-label">Amount</span>
-                    <div className="field-input-wrap">
-                      <input className="field-input" type="number" placeholder="0.000" value={tradeQty} onChange={e => setTradeQty(e.target.value)} />
-                      <span className="field-suffix">zkLTC</span>
-                    </div>
-                  </div>
-
-                  <div className="pct-buttons">
-                    {["25%","50%","75%","Max"].map(p => (
-                      <button key={p} className="pct-btn" onClick={() => setTradeQty(p === "Max" ? "1.0" : String(parseFloat(p)/100))}>{p}</button>
-                    ))}
-                  </div>
-
-                  <div style={{display:"flex",flexDirection:"column",gap:4,padding:"4px 0"}}>
-                    <div className="trade-info-row">
-                      <span className="trade-info-label">Est. Payout</span>
-                      <span className="trade-info-value" style={{color:tradeSide==="Bull"?"var(--bull)":"var(--bear)"}}>
-                        ~{estPayout()} zkLTC
-                      </span>
-                    </div>
-                    <div className="trade-info-row">
-                      <span className="trade-info-label">Multiplier</span>
-                      <span className="trade-info-value">{getMult(biddingRound, tradeSide)}</span>
-                    </div>
-                    <div className="trade-info-row">
-                      <span className="trade-info-label">Pool</span>
-                      <span className="trade-info-value">{biddingRound ? parseFloat(biddingRound.totalAmount).toFixed(3) : "0"} zkLTC</span>
-                    </div>
-                    <div className="trade-info-row">
-                      <span className="trade-info-label">Protocol Fee</span>
-                      <span className="trade-info-value">2%</span>
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  className={`btn-trade ${tradeSide==="Bull"?"bull-trade":"bear-trade"}`}
-                  onClick={() => isPaperMode ? logPaperTrade(tradeSide, tradeQty) : placeBet()}
-                  disabled={loading || (!isPaperMode && !account)}
-                  style={{
-                    background: isPaperMode 
-                      ? "#8b5cf6" 
-                      : (tradeSide === "Bull" ? "var(--bull)" : "var(--bear)"),
-                    border: isPaperMode ? "1px solid #a78bfa" : "none"
-                  }}
-                >
-                  {loading 
-                    ? "Processing…" 
-                    : isPaperMode 
-                      ? `Enter ${tradeSide} (Paper) — Round #${currentEpoch}` 
-                      : !account 
-                        ? "Connect Wallet" 
-                        : `Enter ${tradeSide} — Round #${currentEpoch}`}
-                </button>
-
-                {/* Current position */}
-                {!isPaperMode && userBets[currentEpoch] && (
-                  <div style={{margin:"0 12px 10px",padding:"10px 12px",background:"var(--bg-3)",borderRadius:"var(--radius-md)",border:"1px solid var(--border)"}}>
-                    <div style={{fontSize:11,color:"var(--text-muted)",marginBottom:4}}>Current Position (Real)</div>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                      <span className={`chat-badge ${userBets[currentEpoch].position==="Bull"?"bull-badge":"bear-badge"}`} style={{fontSize:12,padding:"3px 8px"}}>
-                        {userBets[currentEpoch].position}
-                      </span>
-                      <span style={{fontFamily:"monospace",fontSize:12}}>{userBets[currentEpoch].amount} zkLTC</span>
-                    </div>
-                  </div>
-                )}
-
-                {isPaperMode && paperTrades.find(t => t.epoch === currentEpoch && t.status === "Open") && (
-                  <div style={{margin:"0 12px 10px",padding:"10px 12px",background:"var(--bg-3)",borderRadius:"var(--radius-md)",border:"1px solid var(--border)"}}>
-                    <div style={{fontSize:11,color:"var(--text-muted)",marginBottom:4}}>Current Position (Paper)</div>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                      <span className={`chat-badge ${paperTrades.find(t => t.epoch === currentEpoch && t.status === "Open").side==="Bull"?"bull-badge":"bear-badge"}`} style={{fontSize:12,padding:"3px 8px"}}>
-                        {paperTrades.find(t => t.epoch === currentEpoch && t.status === "Open").side}
-                      </span>
-                      <span style={{fontFamily:"monospace",fontSize:12}}>{paperTrades.find(t => t.epoch === currentEpoch && t.status === "Open").amount} zkLTC</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ── POSITIONS TAB ── */}
-            {activeTab === "positions" && (
-              <div className="panel-body" style={{padding:0}}>
-                {/* Selector inside Positions tab */}
-                <div style={{display:"flex", background:"var(--bg-3)", margin:"8px 14px", borderRadius:"var(--radius-sm)", padding:2, gap:2}}>
-                  <button 
-                    onClick={() => setPositionSubTab("real")}
-                    style={{
-                      flex:1, border:"none", 
-                      background: positionSubTab === "real" ? "var(--bg-2)" : "transparent", 
-                      color: positionSubTab === "real" ? "var(--text-primary)" : "var(--text-muted)", 
-                      fontSize:11, padding:"6px 0", cursor:"pointer", borderRadius:3,
-                      fontWeight: 600, transition: "0.2s"
-                    }}
-                  >
-                    🔗 Real positions (zkLTC)
-                  </button>
-                  <button 
-                    onClick={() => setPositionSubTab("paper")}
-                    style={{
-                      flex:1, border:"none", 
-                      background: positionSubTab === "paper" ? "var(--bg-2)" : "transparent", 
-                      color: positionSubTab === "paper" ? "#a78bfa" : "var(--text-muted)", 
-                      fontSize:11, padding:"6px 0", cursor:"pointer", borderRadius:3,
-                      fontWeight: 600, transition: "0.2s"
-                    }}
-                  >
-                    📝 Paper Trades (Practice)
-                  </button>
-                </div>
-
-                {positionSubTab === "real" ? (
-                  Object.keys(userBets).length === 0 ? (
-                    <div className="empty-state" style={{height:"180px"}}>
-                      <span className="empty-icon">📋</span>
-                      <span className="empty-text">No zkLTC positions</span>
-                      <span style={{fontSize:11,color:"var(--text-muted)"}}>Place a real bet to start</span>
-                    </div>
-                  ) : (
-                    <div style={{padding:"0 14px 14px"}}>
-                      {Object.entries(userBets).map(([ep, bet]) => {
-                        const r = rounds[Number(ep)];
-                        const isClaim = claimableEpochs.includes(Number(ep));
-                        return (
-                          <div className="position-row" key={ep}>
-                            <span className="epoch-badge" style={{fontFamily:"monospace",fontSize:11,color:"var(--text-muted)"}}>#{ep}</span>
-                            <div>
-                              <div style={{fontSize:11,fontWeight:600}}>{bet.amount} zkLTC</div>
-                              {r && r.oracleCalled && (
-                                <div style={{fontSize:10,color:"var(--text-muted)"}}>
-                                  {r.lockPrice.toFixed(4)} → {r.closePrice.toFixed(4)}
-                                </div>
-                              )}
-                            </div>
-                            <span className={`chat-badge ${bet.position === "Bull" ? "bull-badge" : "bear-badge"}`}>{bet.position}</span>
-                            {isClaim ? (
-                              <button className="btn btn-primary" style={{fontSize:10,padding:"4px 8px"}} onClick={() => handleClaim([Number(ep)])}>Claim</button>
-                            ) : bet.claimed ? (
-                              <span style={{fontSize:10,color:"var(--text-muted)"}}>Claimed</span>
-                            ) : (
-                              <span style={{fontSize:10,color:"var(--text-muted)"}}>Pending</span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )
-                ) : (
-                  <div>
-                    {/* Paper Stats Dashboard */}
-                    <div style={{margin:"0 14px 10px", display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:6, textAlign:"center"}}>
-                      <div style={{background:"var(--bg-3)", borderRadius:4, padding:"6px 4px", border:"1px solid var(--border)"}}>
-                        <div style={{fontSize:9, color:"var(--text-muted)", textTransform:"uppercase", fontWeight:600}}>PnL</div>
-                        <div style={{fontSize:13, fontWeight:700, color: parseFloat(getPaperStats().totalPnL) >= 0 ? "var(--bull)" : "var(--bear)"}}>
-                          {parseFloat(getPaperStats().totalPnL) >= 0 ? "+" : ""}{getPaperStats().totalPnL}%
-                        </div>
-                      </div>
-                      <div style={{background:"var(--bg-3)", borderRadius:4, padding:"6px 4px", border:"1px solid var(--border)"}}>
-                        <div style={{fontSize:9, color:"var(--text-muted)", textTransform:"uppercase", fontWeight:600}}>Win Rate</div>
-                        <div style={{fontSize:13, fontWeight:700, color:"var(--text-primary)"}}>{getPaperStats().winRate}%</div>
-                      </div>
-                      <div style={{background:"var(--bg-3)", borderRadius:4, padding:"6px 4px", border:"1px solid var(--border)"}}>
-                        <div style={{fontSize:9, color:"var(--text-muted)", textTransform:"uppercase", fontWeight:600}}>Trades</div>
-                        <div style={{fontSize:13, fontWeight:700, color:"var(--text-primary)"}}>{getPaperStats().total}</div>
-                      </div>
-                    </div>
-
-                    {/* Paper Positions List */}
-                    {paperTrades.length === 0 ? (
-                      <div className="empty-state" style={{height:"150px"}}>
-                        <span className="empty-icon">📝</span>
-                        <span className="empty-text">No paper trades</span>
-                        <span style={{fontSize:10,color:"var(--text-muted)", marginBottom:8}}>Toggle Paper Trading to start practice</span>
-                        <button className="btn btn-secondary" style={{fontSize:10, padding:"3px 8px"}} onClick={() => setActiveTab("trade")}>Start practice</button>
-                      </div>
-                    ) : (
-                      <div style={{padding:"0 14px 14px", maxHeight:"200px", overflowY:"auto"}}>
-                        {paperTrades.slice().reverse().map((trade) => (
-                          <div className="position-row" key={trade.id}>
-                            <span className="epoch-badge" style={{fontFamily:"monospace",fontSize:11,color:"var(--text-muted)"}}>#{trade.epoch}</span>
-                            <div>
-                              <div style={{fontSize:11,fontWeight:600}}>{trade.amount} zkLTC</div>
-                              <div style={{fontSize:10,color:"var(--text-muted)"}}>
-                                Entry: ${trade.entryPrice.toFixed(2)}
-                              </div>
-                            </div>
-                            <span className={`chat-badge ${trade.side === "Bull" ? "bull-badge" : "bear-badge"}`}>{trade.side}</span>
-                            <div>
-                              {trade.status === "Closed" ? (
-                                <span style={{fontSize:11, fontWeight:700, color: trade.result === "Win" ? "var(--bull)" : trade.result === "Loss" ? "var(--bear)" : "var(--text-muted)"}}>
-                                  {trade.result === "Win" ? `+${trade.pnl.toFixed(1)}%` : trade.result === "Loss" ? "-100%" : "Cancel"}
-                                </span>
-                              ) : (
-                                <span style={{fontSize:10,color:"var(--text-muted)"}}>Open</span>
-                              )}
-                            </div>
-                          </div>
+                  {positionSubTab === 'paper' && (
+                    <div style={{display:'flex', flexDirection:'column', height:'100%'}}>
+                      <div style={{padding: 8, borderBottom: '1px solid var(--border)', display:'flex', gap: 8, alignItems:'center', flexWrap: 'wrap'}}>
+                        {['All','Open','Win','Loss','Cancel'].map(f => (
+                          <span key={f} style={{fontSize: 11, padding: '2px 8px', borderRadius: 12, background: posFilter===f ? '#3b82f6' : 'var(--bg-input)', color: posFilter===f ? 'white' : 'var(--text-primary)', cursor: 'pointer'}} onClick={() => setPosFilter(f)}>{f}</span>
                         ))}
-                        <div style={{padding:"8px 0 0", textAlign:"right"}}>
-                          <button className="btn btn-secondary" style={{fontSize:10, color:"var(--bear)", padding:"4px 8px", borderColor:"rgba(239,68,68,0.2)"}} onClick={clearPaperHistory}>Clear History</button>
+                        <div style={{marginLeft: 'auto', display: 'flex', gap: 4}}>
+                           <button className="btn btn-ghost" style={{fontSize: 10, border: '1px solid var(--border)'}} onClick={exportCSV}>📥 CSV</button>
+                           <button className="btn btn-ghost" style={{fontSize: 10, color: '#ef4444', border: '1px solid #ef4444'}} onClick={clearPaperHistory}>Clear</button>
                         </div>
                       </div>
-                    )}
+                      <div style={{overflowY:'auto', flex: 1, padding: 8}}>
+                        <table className="table">
+                          <thead><tr><th>Round</th><th>Side</th><th>Amount</th><th>Result</th><th>PnL</th></tr></thead>
+                          <tbody>
+                            {paperTrades.filter(t => posFilter === 'All' || (posFilter === 'Open' && t.status === 'Open') || t.result === posFilter).slice().reverse().map(t => (
+                              <tr key={t.id}>
+                                <td>#{t.epoch}</td>
+                                <td style={{color: t.side==='Bull'?'#22c55e':'#ef4444'}}>{t.side}</td>
+                                <td>{t.amount}</td>
+                                <td>{t.status==='Open' ? '⏳' : t.result==='Win' ? '🏆' : t.result==='Loss' ? '💀' : '➖'}</td>
+                                <td style={{color: t.pnl > 0 ? '#22c55e' : t.pnl < 0 ? '#ef4444' : ''}}>{t.pnl ? `${t.pnl.toFixed(1)}%` : '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* WATCHLIST TAB */}
+              {activeTab === 'watchlist' && (
+                <div style={{padding: 8, display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto', height: '100%'}}>
+                  {watchlist.size === 0 ? (
+                    <div style={{textAlign: 'center', color: 'var(--text-secondary)', marginTop: 20}}>Star rounds to track them here</div>
+                  ) : (
+                    Array.from(watchlist).sort((a,b)=>b-a).map(ep => <RoundCard key={ep} r={rounds[ep]} type={ep === currentEpoch ? "bidding" : ep === currentEpoch - 1 ? "live" : "ended"} />)
+                  )}
+                </div>
+              )}
+
+              {/* BACKTEST TAB */}
+              {activeTab === 'backtest' && (
+                <div style={{display:'flex', flexDirection:'column', height:'100%'}}>
+                  <div style={{padding: 8, borderBottom: '1px solid var(--border)'}}>
+                    <div style={{fontSize: 12, marginBottom: 8}}>Select Strategy:</div>
+                    <div style={{display:'flex', gap:4, flexWrap:'wrap'}}>
+                      <button className="btn btn-secondary" style={{fontSize:11}} onClick={() => runBacktest('always_bull')}>Always Bull</button>
+                      <button className="btn btn-secondary" style={{fontSize:11}} onClick={() => runBacktest('always_bear')}>Always Bear</button>
+                      <button className="btn btn-secondary" style={{fontSize:11}} onClick={() => runBacktest('momentum')}>Momentum</button>
+                      <button className="btn btn-secondary" style={{fontSize:11}} onClick={() => runBacktest('contrarian')}>Contrarian</button>
+                    </div>
                   </div>
-                )}
-              </div>
-            )}
+                  {isBacktesting ? <div style={{padding: 20, textAlign: 'center'}}>Running backtest over last 50 rounds...</div> :
+                   !backtestResults ? <div style={{padding: 20, textAlign: 'center', color: 'var(--text-secondary)'}}>Run a backtest to see equity curve</div> : (
+                    <div style={{flex: 1, display: 'flex', flexDirection: 'column'}}>
+                      <div style={{display: 'flex', padding: 8, gap: 8}}>
+                        <div style={{flex:1, background:'var(--bg-input)', padding:8, borderRadius:4, textAlign:'center'}}>
+                           <div style={{fontSize:11, color:'var(--text-secondary)'}}>Final Balance</div>
+                           <div style={{fontWeight:'bold', color: backtestResults.finalBalance > settings.paperStartBalance ? '#22c55e' : '#ef4444'}}>${backtestResults.finalBalance.toFixed(2)}</div>
+                        </div>
+                        <div style={{flex:1, background:'var(--bg-input)', padding:8, borderRadius:4, textAlign:'center'}}>
+                           <div style={{fontSize:11, color:'var(--text-secondary)'}}>Max Drawdown</div>
+                           <div style={{fontWeight:'bold', color: '#ef4444'}}>{backtestResults.maxDrawdown.toFixed(1)}%</div>
+                        </div>
+                      </div>
+                      <div style={{flex: 1, minHeight: 250, padding: 8, position: 'relative'}} ref={backtestChartContainerRef}></div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+            </div>
           </div>
+
         </div>
       </div>
     </div>
