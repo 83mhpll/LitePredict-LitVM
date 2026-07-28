@@ -1,0 +1,27 @@
+{
+  "name": "litepredict-keeper",
+  "version": "1.0.0",
+  "description": "Production keeper bot for LitePredict on LitVM Testnet",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop litepredict-keeper",
+    "pm2:logs": "pm2 logs litepredict-keeper"
+  },
+  "dependencies": {
+    "ethers": "^6.17.0",
+    "dotenv": "^16.4.5",
+    "node-telegram-bot-api": "^0.66.0",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "ts-node": "^10.9.2",
+    "@types/node": "^22.10.2",
+    "@types/express": "^5.0.0",
+    "@types/node-telegram-bot-api": "^0.64.7"
+  }
+}

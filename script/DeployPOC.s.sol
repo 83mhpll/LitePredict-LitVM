@@ -3,7 +3,7 @@ pragma solidity ^0.8.13;
 
 import "forge-std/Script.sol";
 import "../src/LitePredict.sol";
-import "../test/LitePredict.t.sol"; // imports MockDiaOracle
+import "../test/LitePredict.t.sol"; // imports TestMockDiaOracle
 
 contract DeployPOC is Script {
     function run() external {
@@ -12,7 +12,8 @@ contract DeployPOC is Script {
         vm.startBroadcast(deployerPrivateKey);
 
         // 1. Deploy Mock DIA Oracle
-        MockDiaOracle mockOracle = new MockDiaOracle(85_000000000000000000); // Start LTC at $85
+        TestMockDiaOracle mockOracle = new TestMockDiaOracle();
+        mockOracle.setPrice(85_000000000000000000, block.timestamp);
 
         // 2. Deploy LitePredict with 60-second intervals for fast local testing
         uint256 intervalSeconds = 60; // 1 minute rounds
@@ -33,7 +34,7 @@ contract DeployPOC is Script {
         predictor.genesisStartRound();
         
         console.log("=== LOCAL POC DEPLOYMENT SUCCESS ===");
-        console.log("MockDiaOracle deployed to:", address(mockOracle));
+        console.log("TestMockDiaOracle deployed to:", address(mockOracle));
         console.log("LitePredict deployed to:", address(predictor));
         console.log("Deployer Address:", vm.addr(deployerPrivateKey));
 
