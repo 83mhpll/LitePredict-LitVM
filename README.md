@@ -108,8 +108,8 @@ Follow these steps to run the frontend and development environment locally.
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/Vitvm.git
-cd Vitvm
+git clone https://github.com/83mhpll/LitePredict-LitVM.git
+cd LitePredict-LitVM/frontend
 
 # Install dependencies
 npm install

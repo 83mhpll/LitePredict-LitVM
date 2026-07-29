@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>LitePredict — redesign mockup</title>
+<style>
+  :root{
+    --bg:#ffffff; --bg-alt:#f7f8fa; --border:#e5e7eb; --border-strong:#d1d5db;
+    --text:#0b0e14; --text-2:#6b7280; --text-3:#9ca3af;
+    --blue:#1652f0; --blue-dim:#eef2ff;
+    --green:#059669; --green-dim:#ecfdf5;
+    --red:#dc2626; --red-dim:#fef2f2;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg-alt);font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,sans-serif;color:var(--text);}
+  .app{max-width:1040px;margin:0 auto;}
+
+  /* nav */
+  .nav{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:var(--bg);border-bottom:1px solid var(--border);}
+  .nav-left{display:flex;align-items:center;gap:28px;}
+  .logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;}
+  .logo-mark{width:22px;height:22px;border-radius:6px;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;}
+  .nav-links{display:flex;gap:20px;}
+  .nav-links a{font-size:13px;color:var(--text-2);text-decoration:none;font-weight:500;}
+  .nav-links a.active{color:var(--text);}
+  .wallet-btn{background:var(--blue);color:#fff;border:none;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;}
+
+  /* layout */
+  .layout{display:grid;grid-template-columns:1fr 300px;gap:16px;padding:16px 20px;}
+  @media (max-width:760px){.layout{grid-template-columns:1fr;}}
+
+  .card{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:18px;}
+  .card + .card{margin-top:16px;}
+
+  /* market header */
+  .market-head{display:flex;align-items:center;gap:12px;margin-bottom:6px;}
+  .asset-icon{width:32px;height:32px;border-radius:50%;background:var(--bg-alt);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:var(--text-2);border:1px solid var(--border);}
+  .market-title{font-size:16px;font-weight:600;margin:0;}
+  .market-sub{font-size:12px;color:var(--text-3);margin:2px 0 0;}
+  .status-pill{margin-left:auto;font-size:11px;font-weight:600;color:var(--green);background:var(--green-dim);padding:4px 10px;border-radius:20px;display:flex;align-items:center;gap:5px;}
+  .status-dot{width:6px;height:6px;border-radius:50%;background:var(--green);}
+
+  /* price row */
+  .price-row{display:flex;align-items:baseline;gap:10px;margin:14px 0 12px;}
+  .price-big{font-size:30px;font-weight:700;letter-spacing:-0.5px;}
+  .price-chg{font-size:13px;font-weight:600;color:var(--green);}
+
+  /* chart */
+  .chart-wrap{height:140px;margin-bottom:16px;}
+  svg{display:block;width:100%;height:100%;}
+
+  /* probability bar */
+  .prob-bar{display:flex;height:8px;border-radius:20px;overflow:hidden;background:var(--border);margin-bottom:10px;}
+  .prob-yes{background:var(--green);}
+  .prob-no{background:var(--red);}
+  .prob-labels{display:flex;justify-content:space-between;font-size:12px;color:var(--text-2);margin-bottom:16px;}
+  .prob-labels b{color:var(--text);}
+
+  /* bet buttons */
+  .bet-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;}
+  .bet-btn{border:none;border-radius:10px;padding:14px 0;font-size:14px;font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;transition:transform .08s;}
+  .bet-btn:active{transform:scale(.97);}
+  .bet-yes{background:var(--green-dim);color:var(--green);}
+  .bet-yes.selected{background:var(--green);color:#fff;}
+  .bet-no{background:var(--red-dim);color:var(--red);}
+  .bet-no.selected{background:var(--red);color:#fff;}
+  .bet-btn small{font-size:11px;font-weight:500;opacity:.85;}
+
+  .amount-row{display:flex;gap:8px;margin-bottom:14px;}
+  .amount-input{flex:1;border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:14px;font-family:inherit;}
+  .amount-input:focus{outline:none;border-color:var(--blue);}
+  .quick-amt{border:1px solid var(--border);background:var(--bg);border-radius:8px;padding:0 12px;font-size:12px;color:var(--text-2);cursor:pointer;}
+
+  .submit-btn{width:100%;background:var(--text);color:#fff;border:none;border-radius:10px;padding:13px 0;font-size:14px;font-weight:700;cursor:pointer;}
+  .submit-btn:disabled{background:var(--border-strong);color:var(--text-3);cursor:not-allowed;}
+
+  .meta-row{display:flex;justify-content:space-between;font-size:12px;color:var(--text-3);margin-top:12px;padding-top:12px;border-top:1px solid var(--border);}
+
+  /* sidebar */
+  .side-title{font-size:13px;font-weight:700;margin:0 0 12px;}
+  .mini-market{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);}
+  .mini-market:last-child{border-bottom:none;}
+  .mini-icon{width:28px;height:28px;border-radius:50%;background:var(--bg-alt);border:1px solid var(--border);flex-shrink:0;}
+  .mini-name{font-size:13px;font-weight:600;margin:0;}
+  .mini-sub{font-size:11px;color:var(--text-3);margin:2px 0 0;}
+  .mini-pct{margin-left:auto;font-size:13px;font-weight:700;}
+
+  .activity-row{display:flex;justify-content:space-between;font-size:12px;padding:7px 0;border-bottom:1px solid var(--border);}
+  .activity-row:last-child{border-bottom:none;}
+  .activity-row span:first-child{color:var(--text-2);}
+  .act-yes{color:var(--green);font-weight:600;}
+  .act-no{color:var(--red);font-weight:600;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="nav">
+    <div class="nav-left">
+      <div class="logo"><div class="logo-mark">LP</div>LitePredict</div>
+      <div class="nav-links">
+        <a href="#" class="active">Markets</a>
+        <a href="#">Portfolio</a>
+        <a href="#">Leaderboard</a>
+      </div>
+    </div>
+    <button class="wallet-btn">Connect wallet</button>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="card">
+        <div class="market-head">
+          <div class="asset-icon">Ł</div>
+          <div>
+            <p class="market-title">Will LTC be above $46.57 at 11:15?</p>
+            <p class="market-sub">Round #1 · closes in <span id="countdown">4:52</span></p>
+          </div>
+          <div class="status-pill"><span class="status-dot"></span>Live</div>
+        </div>
+
+        <div class="price-row">
+          <div class="price-big">$46.70</div>
+          <div class="price-chg">+1.24%</div>
+        </div>
+
+        <div class="chart-wrap">
+          <svg viewBox="0 0 400 140" preserveAspectRatio="none">
+            <polyline fill="none" stroke="#059669" stroke-width="2"
+              points="0,90 20,88 40,95 60,92 80,100 100,96 120,85 140,80 160,88 180,75 200,70 220,78 240,65 260,60 280,68 300,55 320,50 340,58 360,45 380,40 400,35" />
+          </svg>
+        </div>
+
+        <div class="prob-bar">
+          <div class="prob-yes" style="width:58%"></div>
+          <div class="prob-no" style="width:42%"></div>
+        </div>
+        <div class="prob-labels">
+          <span><b>58%</b> Yes</span>
+          <span><b>42%</b> No</span>
+        </div>
+
+        <div class="bet-row">
+          <button class="bet-btn bet-yes selected" id="btnYes">Yes <small>58c</small></button>
+          <button class="bet-btn bet-no" id="btnNo">No <small>42c</small></button>
+        </div>
+
+        <div class="amount-row">
+          <input class="amount-input" id="amountInput" type="number" placeholder="Amount in zkLTC" value="10">
+          <button class="quick-amt" onclick="setAmt(10)">10</button>
+          <button class="quick-amt" onclick="setAmt(50)">50</button>
+          <button class="quick-amt" onclick="setAmt(100)">Max</button>
+        </div>
+
+        <button class="submit-btn" id="submitBtn">Bet 10 zkLTC on Yes</button>
+
+        <div class="meta-row">
+          <span>Pool: <b style="color:var(--text)">1,240 zkLTC</b></span>
+          <span>Payout if correct: <b style="color:var(--text)">17.2 zkLTC</b></span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <p class="side-title">Other markets</p>
+
+        <div class="mini-market">
+          <div class="mini-icon"></div>
+          <div>
+            <p class="mini-name">BTC above $65k?</p>
+            <p class="mini-sub">2:14 left</p>
+          </div>
+          <div class="mini-pct" style="color:var(--green)">64%</div>
+        </div>
+
+        <div class="mini-market">
+          <div class="mini-icon"></div>
+          <div>
+            <p class="mini-name">ETH above $3.1k?</p>
+            <p class="mini-sub">4:52 left</p>
+          </div>
+          <div class="mini-pct" style="color:var(--red)">39%</div>
+        </div>
+
+        <div class="mini-market">
+          <div class="mini-icon"></div>
+          <div>
+            <p class="mini-name">LTC above $47?</p>
+            <p class="mini-sub">next round</p>
+          </div>
+          <div class="mini-pct" style="color:var(--text-2)">—</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <p class="side-title">Recent activity</p>
+        <div class="activity-row"><span>whale_ltc</span><span class="act-yes">+40 Yes</span></div>
+        <div class="activity-row"><span>trader_88</span><span class="act-no">+12 No</span></div>
+        <div class="activity-row"><span>satoshi_jr</span><span class="act-yes">+8 Yes</span></div>
+        <div class="activity-row"><span>newbie_nft</span><span class="act-no">+5 No</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let side = 'yes';
+  const btnYes = document.getElementById('btnYes');
+  const btnNo = document.getElementById('btnNo');
+  const submitBtn = document.getElementById('submitBtn');
+  const amountInput = document.getElementById('amountInput');
+
+  function refreshSubmit(){
+    const amt = amountInput.value || 0;
+    submitBtn.textContent = `Bet ${amt} zkLTC on ${side === 'yes' ? 'Yes' : 'No'}`;
+  }
+  function setAmt(v){ amountInput.value = v; refreshSubmit(); }
+  amountInput.addEventListener('input', refreshSubmit);
+
+  btnYes.addEventListener('click', () => {
+    side = 'yes';
+    btnYes.classList.add('selected'); btnNo.classList.remove('selected');
+    refreshSubmit();
+  });
+  btnNo.addEventListener('click', () => {
+    side = 'no';
+    btnNo.classList.add('selected'); btnYes.classList.remove('selected');
+    refreshSubmit();
+  });
+
+  // countdown
+  let secs = 292;
+  setInterval(() => {
+    if (secs <= 0) return;
+    secs--;
+    const m = Math.floor(secs/60), s = secs%60;
+    document.getElementById('countdown').textContent = `${m}:${s.toString().padStart(2,'0')}`;
+  }, 1000);
+</script>
+</body>
+</html>
