@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>LitePredict — simplified, dark/light toggle</title>
+<style>
+  :root{
+    --bg:#0b0e14; --bg-alt:#151922; --border:#242a36;
+    --text:#f4f5f7; --text-2:#9aa1ae; --text-3:#5b6270;
+    --blue:#3b6bff; --blue-dim:#182238;
+    --green:#22c55e; --green-dim:#10241a;
+    --red:#f2495c; --red-dim:#2a1418;
+    --radius:12px;
+  }
+  [data-theme="light"]{
+    --bg:#ffffff; --bg-alt:#f7f8fa; --border:#e5e7eb;
+    --text:#0b0e14; --text-2:#6b7280; --text-3:#9ca3af;
+    --blue:#1652f0; --blue-dim:#eef2ff;
+    --green:#059669; --green-dim:#ecfdf5;
+    --red:#dc2626; --red-dim:#fef2f2;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,sans-serif;color:var(--text);transition:background .15s,color .15s;}
+  .app{max-width:720px;margin:0 auto;}
+
+  /* nav */
+  .nav{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);}
+  .logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;}
+  .logo-mark{width:22px;height:22px;border-radius:6px;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;}
+  .nav-right{display:flex;align-items:center;gap:12px;}
+
+  /* theme toggle */
+  .toggle{width:44px;height:24px;border-radius:20px;background:var(--bg-alt);border:1px solid var(--border);position:relative;cursor:pointer;flex-shrink:0;}
+  .toggle-knob{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--text);transition:transform .15s;}
+  [data-theme="light"] .toggle-knob{transform:translateX(20px);}
+
+  .wallet-btn{background:var(--blue);color:#fff;border:none;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;}
+
+  /* category pills */
+  .cat-row{display:flex;gap:8px;padding:14px 20px 0;overflow-x:auto;}
+  .cat-btn{border:1px solid var(--border);background:transparent;color:var(--text-2);font-size:13px;font-weight:600;padding:7px 14px;border-radius:20px;cursor:pointer;white-space:nowrap;}
+  .cat-btn.active{background:var(--text);color:var(--bg);border-color:var(--text);}
+
+  .layout{padding:16px 20px 40px;}
+
+  /* single simple market card - one at a time, no clutter */
+  .card{background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:14px;}
+
+  .card-head{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+  .icon-badge{width:30px;height:30px;border-radius:50%;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--text-2);}
+  .card-title{font-size:15px;font-weight:600;margin:0;}
+  .card-sub{font-size:12px;color:var(--text-3);margin:2px 0 0;}
+  .live-pill{margin-left:auto;font-size:11px;font-weight:600;color:var(--green);background:var(--green-dim);padding:4px 10px;border-radius:20px;}
+
+  .prob-bar{display:flex;height:8px;border-radius:20px;overflow:hidden;background:var(--border);margin-bottom:8px;}
+  .prob-a{background:var(--green);}
+  .prob-b{background:var(--red);}
+  .prob-labels{display:flex;justify-content:space-between;font-size:12px;color:var(--text-2);margin-bottom:16px;}
+  .prob-labels b{color:var(--text);}
+
+  .bet-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .bet-btn{border:none;border-radius:10px;padding:14px 0;font-size:14px;font-weight:700;cursor:pointer;}
+  .bet-a{background:var(--green-dim);color:var(--green);}
+  .bet-b{background:var(--red-dim);color:var(--red);}
+
+  .simple-note{font-size:12px;color:var(--text-3);text-align:center;margin-top:20px;line-height:1.6;}
+</style>
+</head>
+<body data-theme="dark" id="root">
+<div class="app">
+
+  <div class="nav">
+    <div class="logo"><div class="logo-mark">LP</div>LitePredict</div>
+    <div class="nav-right">
+      <div class="toggle" id="themeToggle"><div class="toggle-knob"></div></div>
+      <button class="wallet-btn">Connect</button>
+    </div>
+  </div>
+
+  <div class="cat-row">
+    <button class="cat-btn active">Crypto</button>
+    <button class="cat-btn">Sports</button>
+    <button class="cat-btn">Finance</button>
+  </div>
+
+  <div class="layout">
+
+    <div class="card">
+      <div class="card-head">
+        <div class="icon-badge">Ł</div>
+        <div>
+          <p class="card-title">LTC above $46.57?</p>
+          <p class="card-sub">closes in 4:52</p>
+        </div>
+        <div class="live-pill">Live</div>
+      </div>
+      <div class="prob-bar"><div class="prob-a" style="width:58%"></div><div class="prob-b" style="width:42%"></div></div>
+      <div class="prob-labels"><span><b>58%</b> Yes</span><span><b>42%</b> No</span></div>
+      <div class="bet-row">
+        <button class="bet-btn bet-a">Yes</button>
+        <button class="bet-btn bet-b">No</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="icon-badge">🏈</div>
+        <div>
+          <p class="card-title">Panthers beat Cardinals?</p>
+          <p class="card-sub">Hall of Fame Game · Aug 7</p>
+        </div>
+      </div>
+      <div class="prob-bar"><div class="prob-a" style="width:52.2%"></div><div class="prob-b" style="width:47.8%"></div></div>
+      <div class="prob-labels"><span><b>52%</b> Panthers</span><span><b>48%</b> Cardinals</span></div>
+      <div class="bet-row">
+        <button class="bet-btn bet-a">Panthers</button>
+        <button class="bet-btn bet-b">Cardinals</button>
+      </div>
+    </div>
+
+    <p class="simple-note">One market at a time, no clutter.<br>Scroll for more, or filter by category above.</p>
+  </div>
+</div>
+
+<script>
+  const root = document.getElementById('root');
+  const toggle = document.getElementById('themeToggle');
+  toggle.addEventListener('click', () => {
+    const isLight = root.getAttribute('data-theme') === 'light';
+    root.setAttribute('data-theme', isLight ? 'dark' : 'light');
+  });
+</script>
+</body>
+</html>
