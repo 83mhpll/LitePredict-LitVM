@@ -4,7 +4,7 @@
  * frontend automatically switches from local-storage demo bets to
  * real on-chain markets - no other code changes needed.
  */
-export const SPORTS_MARKET_ADDRESS = ""; // e.g. "0xAbC123..." after deploying
+export const SPORTS_MARKET_ADDRESS = "0xaa2e33ca276478a9849eaeb5726a996cc42884bc";
 
 export const SPORTS_MARKET_ABI = [
   "function nextMarketId() view returns (uint256)",
