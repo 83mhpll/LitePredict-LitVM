@@ -355,6 +355,11 @@ export default function SimplePredict({ onSwitchToClassic }) {
 }
 
 const SIMPLE_STYLES = `
+html, body, #root {
+  overflow: auto !important;
+  height: auto !important;
+  min-height: 100vh !important;
+}
 .sp-root{
   --bg:#0b0e14; --bg-alt:#151922; --border:#242a36;
   --text:#f4f5f7; --text-2:#9aa1ae; --text-3:#5b6270;
