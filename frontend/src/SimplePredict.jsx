@@ -6,6 +6,11 @@ import { fmtTime, fmt4 } from "./utils/format";
 
 const SPORTS_LIVE = Boolean(SPORTS_MARKET_ADDRESS);
 
+/* ──────────────────────────────────────────────────────────
+   Fallback game list, used only in demo mode (before SportsMarket
+   is deployed). Once SPORTS_MARKET_ADDRESS is set, real markets
+   are read directly from the contract instead of this list.
+────────────────────────────────────────────────────────── */
 const DEMO_SPORTS_GAMES = [
   {
     id: "hof-2026",
@@ -23,6 +28,7 @@ const DEMO_SPORTS_GAMES = [
   },
 ];
 
+/* Guess a sport tag + emoji from a market title, for the pill list */
 function sportMeta(title = "") {
   const t = title.toUpperCase();
   if (t.includes("UFC")) return { tag: "UFC", icon: "🥊" };
@@ -31,6 +37,27 @@ function sportMeta(title = "") {
   return { tag: "NFL", icon: "🏈" };
 }
 
+/* Detect installed injected wallets. Modern multi-wallet browsers expose
+   window.ethereum.providers (array); single-wallet setups just have
+   window.ethereum with flags like isMetaMask / isRabby on it directly. */
+function detectWallets() {
+  if (typeof window === "undefined" || !window.ethereum) return [];
+  const raw = window.ethereum.providers?.length ? window.ethereum.providers : [window.ethereum];
+  const seen = new Set();
+  const wallets = [];
+  for (const p of raw) {
+    let name = "Browser Wallet", icon = "🦊";
+    if (p.isRabby) { name = "Rabby"; icon = "🐰"; }
+    else if (p.isMetaMask) { name = "MetaMask"; icon = "🦊"; }
+    else if (p.isCoinbaseWallet) { name = "Coinbase Wallet"; icon = "🔵"; }
+    if (seen.has(name)) continue;
+    seen.add(name);
+    wallets.push({ name, icon, provider: p });
+  }
+  return wallets;
+}
+
+/* ── Local demo bet ledger for sports (only used pre-deploy) ── */
 const SPORTS_BETS_KEY = "lp_sports_demo_bets";
 function useSportsDemoBets() {
   const [bets, setBets] = useState(() => {
@@ -47,6 +74,7 @@ function useSportsDemoBets() {
   return { bets, placeBet };
 }
 
+/* ── Real on-chain sports markets (used once SPORTS_MARKET_ADDRESS is set) ── */
 function useOnChainSportsMarkets() {
   const [markets, setMarkets] = useState([]);
   const [loading, setLoading] = useState(SPORTS_LIVE);
@@ -72,7 +100,7 @@ function useOnChainSportsMarkets() {
           closeTime: Number(m.closeTime),
           homePct: total > 0 ? (homePool / total) * 100 : 50,
           awayPct: total > 0 ? (awayPool / total) * 100 : 50,
-          outcome: Number(m.outcome),
+          outcome: Number(m.outcome), // 0 = unresolved, 1 = home won, 2 = away won, 3 = cancelled
         });
       }
       setMarkets(results);
@@ -96,7 +124,7 @@ function useOnChainSportsMarkets() {
     const signer = await provider.getSigner();
     const contract = new ethers.Contract(SPORTS_MARKET_ADDRESS, SPORTS_MARKET_ABI, signer);
     const value = ethers.parseEther(String(amount));
-    const tx = await contract.bet(marketId, side, { value });
+    const tx = await contract.bet(marketId, side, { value }); // side: 1 = home, 2 = away
     await tx.wait();
     await fetchMarkets();
   }, [fetchMarkets]);
@@ -108,6 +136,7 @@ export default function SimplePredict({ onSwitchToClassic }) {
   const [theme, setTheme] = useState("dark");
   const [category, setCategory] = useState("crypto");
 
+  // ── Read-only on-chain data (no wallet needed to view) ──
   const [account, setAccount] = useState("");
   const [currentEpoch, setCurrentEpoch] = useState(null);
   const [round, setRound] = useState(null);
@@ -152,15 +181,33 @@ export default function SimplePredict({ onSwitchToClassic }) {
     return () => clearInterval(id);
   }, [fetchRound]);
 
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [signed, setSigned] = useState(false);
+  const wallets = useMemo(() => detectWallets(), [walletModalOpen]);
+
+  const connectWithProvider = async (walletProvider) => {
+    setConnecting(true);
+    try {
+      const provider = new ethers.BrowserProvider(walletProvider);
+      const accs = await provider.send("eth_requestAccounts", []);
+      const signer = await provider.getSigner();
+      // sign-in step: proves the connected account actually controls this wallet
+      const message = `Sign in to LitePredict\n\nThis signature doesn't cost gas and doesn't authorize any transaction — it just verifies you control this wallet.\n\nWallet: ${accs[0]}\nTime: ${new Date().toISOString()}`;
+      await signer.signMessage(message);
+      setAccount(accs[0]);
+      setSigned(true);
+      setWalletModalOpen(false);
+    } catch (e) {
+      setToast(e?.shortMessage || e?.message || "Wallet connection was rejected or failed.");
+    } finally {
+      setConnecting(false);
+    }
+  };
+
   const connectWallet = async () => {
     if (!window.ethereum) { setToast("No wallet found — install MetaMask or Rabby to place real bets."); return; }
-    try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const accs = await provider.send("eth_requestAccounts", []);
-      setAccount(accs[0]);
-    } catch (e) {
-      setToast("Wallet connection was rejected or failed.");
-    }
+    setWalletModalOpen(true);
   };
 
   const secondsLeft = round ? Math.max(0, round.lockTimestamp - now) : 0;
@@ -169,7 +216,12 @@ export default function SimplePredict({ onSwitchToClassic }) {
     : 50;
   const bearPct = 100 - bullPct;
 
-  const [slip, setSlip] = useState({});
+  /* ══════════════════════════════════════════════
+     BET SLIP — queues picks across markets/sports.
+     Each item bets independently (no combined parlay
+     payout — the contracts don't support that).
+  ══════════════════════════════════════════════ */
+  const [slip, setSlip] = useState({}); // key -> item
 
   const toggleSlip = (key, payload) => {
     setSlip(prev => {
@@ -217,6 +269,7 @@ export default function SimplePredict({ onSwitchToClassic }) {
         setSlip(prev => ({ ...prev, [key]: { ...prev[key], status: "error", error: e?.shortMessage || e?.message || "Bet failed" } }));
       }
     }
+    // clear out anything that succeeded, leave failures visible so they can retry/remove
     setTimeout(() => {
       setSlip(prev => {
         const next = {};
@@ -238,7 +291,7 @@ export default function SimplePredict({ onSwitchToClassic }) {
             <div className="mp-toggle-knob" />
           </div>
           {account
-            ? <span className="mp-account">{account.slice(0,6)}…{account.slice(-4)}</span>
+            ? <span className="mp-account">{signed && "✓ "}{account.slice(0,6)}…{account.slice(-4)}</span>
             : <button className="mp-wallet-btn" onClick={connectWallet}>Connect wallet</button>}
         </div>
       </div>
@@ -370,10 +423,41 @@ export default function SimplePredict({ onSwitchToClassic }) {
           )}
         </aside>
       </div>
+
+      {walletModalOpen && (
+        <div className="mp-modal-overlay" onClick={() => !connecting && setWalletModalOpen(false)}>
+          <div className="mp-modal" onClick={e => e.stopPropagation()}>
+            <div className="mp-modal-head">
+              <p className="mp-modal-title">Connect a wallet</p>
+              <button className="mp-modal-close" onClick={() => setWalletModalOpen(false)} disabled={connecting}>✕</button>
+            </div>
+
+            {wallets.length === 0 && (
+              <p className="mp-modal-empty">No wallet extension detected. Install <a href="https://metamask.io" target="_blank" rel="noreferrer">MetaMask</a> or <a href="https://rabby.io" target="_blank" rel="noreferrer">Rabby</a> and refresh.</p>
+            )}
+
+            {wallets.map(w => (
+              <button
+                key={w.name}
+                className="mp-modal-wallet"
+                disabled={connecting}
+                onClick={() => connectWithProvider(w.provider)}
+              >
+                <span className="mp-modal-wallet-icon">{w.icon}</span>
+                <span className="mp-modal-wallet-name">{w.name}</span>
+                {connecting && <span className="mp-modal-wallet-status">Connecting…</span>}
+              </button>
+            ))}
+
+            <p className="mp-modal-note">Connecting will ask you to approve access, then sign a free message to verify you own the wallet. No transaction, no gas.</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
+/* Compact Meridian-style market row: icon, tag/title, two odds pills */
 function MarketRow({ icon, tag, title, sub, live, leftLabel, leftPct, rightLabel, rightPct, disabled, selectedSide, onSelect }) {
   return (
     <div className={`mp-row ${disabled ? "disabled" : ""}`}>
@@ -442,9 +526,13 @@ html, body, #root {
 .mp-toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);max-width:600px;width:calc(100% - 40px);padding:12px 18px;background:var(--red-dim);color:var(--red);border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,0.4);z-index:1000;border:1px solid var(--red);}
 .mp-demo-banner{padding:10px 16px;background:var(--bg-alt);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--text-2);margin-bottom:12px;}
 .mp-note{font-size:12px;color:var(--text-3);}
+
+/* layout: list + sticky slip sidebar */
 .mp-layout{display:grid;grid-template-columns:1fr 320px;gap:20px;padding:20px 24px 60px;max-width:1100px;margin:0 auto;align-items:start;}
 @media (max-width:820px){.mp-layout{grid-template-columns:1fr;}}
 .mp-list{display:flex;flex-direction:column;gap:10px;}
+
+/* market row, Meridian-style pill layout */
 .mp-row{display:flex;align-items:center;gap:14px;background:var(--bg-alt);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
 .mp-row.disabled{opacity:.5;}
 .mp-row-icon{width:36px;height:36px;border-radius:50%;background:var(--bg-alt2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;}
@@ -462,6 +550,8 @@ html, body, #root {
 .mp-pill.pill-a.selected{background:var(--green);color:#fff;border-color:var(--green);}
 .mp-pill.pill-b.selected{background:var(--red);color:#fff;border-color:var(--red);}
 .mp-pill:disabled{opacity:.4;cursor:not-allowed;}
+
+/* bet slip */
 .mp-slip{background:var(--bg-alt);border:1px solid var(--border);border-radius:12px;padding:18px;position:sticky;top:20px;}
 .mp-slip-title{font-size:14px;font-weight:700;margin:0 0 12px;display:flex;align-items:center;gap:8px;}
 .mp-slip-count{background:var(--blue);color:#fff;font-size:11px;font-weight:700;border-radius:20px;padding:2px 8px;}
@@ -481,4 +571,20 @@ html, body, #root {
 .mp-slip-total{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text-2);margin:14px 0 10px;padding-top:12px;border-top:1px solid var(--border);}
 .mp-slip-total b{color:var(--text);font-size:14px;}
 .mp-slip-submit{width:100%;background:var(--blue);color:#fff;border:none;border-radius:10px;padding:12px 0;font-size:13px;font-weight:700;cursor:pointer;}
+
+.mp-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:2000;padding:20px;}
+.mp-modal{background:var(--bg-alt);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:340px;}
+.mp-modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
+.mp-modal-title{font-size:15px;font-weight:700;margin:0;}
+.mp-modal-close{background:none;border:none;color:var(--text-2);cursor:pointer;font-size:14px;}
+.mp-modal-close:disabled{opacity:.4;cursor:not-allowed;}
+.mp-modal-empty{font-size:12px;color:var(--text-2);line-height:1.6;}
+.mp-modal-empty a{color:var(--blue);}
+.mp-modal-wallet{width:100%;display:flex;align-items:center;gap:12px;background:var(--bg-alt2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px;cursor:pointer;font-size:14px;font-weight:600;color:var(--text);}
+.mp-modal-wallet:hover{border-color:var(--blue);}
+.mp-modal-wallet:disabled{opacity:.6;cursor:not-allowed;}
+.mp-modal-wallet-icon{font-size:20px;}
+.mp-modal-wallet-name{flex:1;text-align:left;}
+.mp-modal-wallet-status{font-size:11px;color:var(--text-3);font-weight:500;}
+.mp-modal-note{font-size:11px;color:var(--text-3);line-height:1.5;margin:10px 0 0;}
 `;
