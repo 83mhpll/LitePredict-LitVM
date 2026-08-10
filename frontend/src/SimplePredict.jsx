@@ -4,7 +4,12 @@ import { LITE_PREDICT_ABI, DEFAULT_CONTRACT, LITVM_RPC } from "./constants/contr
 import { SPORTS_MARKET_ADDRESS, SPORTS_MARKET_ABI } from "./constants/sportsContract";
 import { fmtTime, fmt4 } from "./utils/format";
 
-const SPORTS_LIVE = Boolean(SPORTS_MARKET_ADDRESS);
+// Forced to demo/ESPN mode — the real on-chain SportsMarket contract had
+// duplicate markets from a batch that got run twice during setup, and
+// keeping this false avoids needing to babysit on-chain market creation
+// for every new fight/game. Demo data + the ESPN auto-fetch below covers
+// the "don't want to manually manage this" requirement instead.
+const SPORTS_LIVE = false;
 
 /* ─────────────── REAL SPORT LOGOS (inline SVG) ─────────────── */
 const NFLLogo = () => (
@@ -142,6 +147,18 @@ function sportMeta(title = "") {
 
 function getInitials(name = "") {
   return name.split(" ").map(w => w[0]).join("").slice(0, 3).toUpperCase();
+}
+
+/* Demo entries only store a short date like "Aug 9" with no year — assume
+   the current year for comparison. Events are considered "ended" once
+   their date has fully passed (end of that day), so they auto-disappear
+   without anyone manually deleting them. */
+function isEventOver(dateStr, sortTime) {
+  if (sortTime) return Date.now() > sortTime;
+  const withYear = `${dateStr}, ${new Date().getFullYear()} 23:59:59`;
+  const parsed = new Date(withYear);
+  if (isNaN(parsed.getTime())) return false; // if we can't parse it, don't hide it
+  return Date.now() > parsed.getTime();
 }
 
 /* ─────────────── ESPN AUTO-FETCH (UFC) ───────────────
@@ -537,7 +554,9 @@ export default function SimplePredict() {
       ? espnUFCEvents
       : DEMO_SPORTS_GAMES.filter(g => g.tag === "UFC"); // fallback while ESPN loads / if it fails
 
-    const merged = [...ufcGames, ...nonUFC].sort((a, b) => (a._sortTime || 0) - (b._sortTime || 0));
+    const merged = [...ufcGames, ...nonUFC]
+      .filter(g => !isEventOver(g.date, g._sortTime))
+      .sort((a, b) => (a._sortTime || 0) - (b._sortTime || 0));
 
     return merged.map(g => {
       const meta = sportMeta(g.tag);
@@ -672,8 +691,8 @@ export default function SimplePredict() {
                 </div>
               )}
               {SPORTS_LIVE && onChainSports.loading && <p className="mp-note">Loading on-chain markets…</p>}
-              {SPORTS_LIVE && !onChainSports.loading && filteredSports.length === 0 && (
-                <p className="mp-note">No sports markets in this category.</p>
+              {!onChainSports.loading && filteredSports.length === 0 && (
+                <p className="mp-note">No upcoming events in this category right now — check back soon.</p>
               )}
 
               {filteredSports.map(s => {
