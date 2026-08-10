@@ -394,6 +394,7 @@ export default function SimplePredict() {
   const [now, setNow] = useState(Math.floor(Date.now() / 1000));
   const [toast, setToast] = useState("");
   const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [availableWallets, setAvailableWallets] = useState([]);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMarket, setChatMarket] = useState("");
@@ -454,6 +455,8 @@ export default function SimplePredict() {
     setWalletModalOpen(true);
   };
 
+  const [signing, setSigning] = useState(false);
+
   const connectWallet = async (wallet) => {
     try {
       let provider;
@@ -468,11 +471,33 @@ export default function SimplePredict() {
         provider = new ethers.BrowserProvider(window.ethereum);
       }
       const accs = await provider.send("eth_requestAccounts", []);
+
+      // Sign-in verification: proves the connected account actually controls
+      // this wallet. Free, no gas, no transaction — just a signed message.
+      setSigning(true);
+      try {
+        const signer = await provider.getSigner();
+        const message = `Sign in to LitePredict\n\nThis confirms you control this wallet. No gas, no transaction.\n\nWallet: ${accs[0]}\nTime: ${new Date().toISOString()}`;
+        await signer.signMessage(message);
+      } catch (signErr) {
+        setSigning(false);
+        setToast("Signature declined — you can still browse, but connect again to place bets.");
+        return;
+      }
+      setSigning(false);
+
       setAccount(accs[0]);
       setWalletModalOpen(false);
     } catch (e) {
+      setSigning(false);
       setToast("Wallet connection was rejected or failed.");
     }
+  };
+
+  const disconnectWallet = () => {
+    setAccount("");
+    setAccountMenuOpen(false);
+    setToast("Wallet disconnected.");
   };
 
   const secondsLeft = round ? Math.max(0, round.lockTimestamp - now) : 0;
@@ -502,6 +527,16 @@ export default function SimplePredict() {
 
   const slipItems = Object.entries(slip);
   const slipTotal = slipItems.reduce((sum, [, item]) => sum + (parseFloat(item.amount) || 0), 0);
+
+  // Potential return if a pick wins: stake / (probability as a fraction).
+  // e.g. a 0.01 stake at 40% pays back 0.01 / 0.40 = 0.025 total (0.015 profit).
+  const calcReturn = (item) => {
+    const amt = parseFloat(item.amount) || 0;
+    const pct = Math.max(1, Math.min(99, item.percent)); // guard against 0/100 edge cases
+    return amt / (pct / 100);
+  };
+  const slipTotalReturn = slipItems.reduce((sum, [, item]) => sum + calcReturn(item), 0);
+  const slipTotalProfit = slipTotalReturn - slipTotal;
 
   const placeAll = async () => {
     if (!account) { openWalletModal(); return; }
@@ -607,8 +642,19 @@ export default function SimplePredict() {
             <div className="mp-toggle-knob" />
           </div>
           {account
-            ? <span className="mp-account">{account.slice(0,6)}…{account.slice(-4)}</span>
-            : <button className="mp-wallet-btn" onClick={openWalletModal}>Connect wallet</button>}
+            ? (
+              <div className="mp-account-wrap">
+                <button className="mp-account" onClick={() => setAccountMenuOpen(o => !o)}>
+                  ✓ {account.slice(0,6)}…{account.slice(-4)}
+                </button>
+                {accountMenuOpen && (
+                  <div className="mp-account-menu">
+                    <button className="mp-account-disconnect" onClick={disconnectWallet}>Disconnect</button>
+                  </div>
+                )}
+              </div>
+            )
+            : <button className="mp-wallet-btn" onClick={openWalletModal} disabled={signing}>{signing ? "Waiting for signature…" : "Connect wallet"}</button>}
         </div>
       </div>
 
@@ -668,7 +714,7 @@ export default function SimplePredict() {
       <div className="mp-layout">
         <div className="mp-list">
           {category === "crypto" && (
-            <MarketRow
+            <MarketCard
               icon={<CryptoLogo />}
               tag="Crypto"
               title="Will the current LTC round close Bull?"
@@ -700,7 +746,7 @@ export default function SimplePredict() {
                   const meta = sportMeta(s.title);
                   const key = `sports-${s.marketId}`;
                   return (
-                    <MarketRow
+                    <MarketCard
                       key={key}
                       icon={meta.icon}
                       tag={meta.tag}
@@ -719,7 +765,7 @@ export default function SimplePredict() {
                 } else {
                   const key = s.key;
                   return (
-                    <MarketRow
+                    <MarketCard
                       key={key}
                       icon={s.icon}
                       tag={s.tag}
@@ -769,6 +815,12 @@ export default function SimplePredict() {
               {item.status === "pending" && <p className="mp-slip-status pending">Sending…</p>}
               {item.status === "success" && <p className="mp-slip-status success">Confirmed ✓</p>}
               {item.status === "error" && <p className="mp-slip-status error">{item.error}</p>}
+              {item.status === "idle" && (
+                <p className="mp-slip-profit">
+                  To win <b>{calcReturn(item).toFixed(4)} zkLTC</b>
+                  <span className="mp-slip-profit-gain"> (+{(calcReturn(item) - (parseFloat(item.amount) || 0)).toFixed(4)} profit)</span>
+                </p>
+              )}
             </div>
           ))}
 
@@ -777,6 +829,14 @@ export default function SimplePredict() {
               <div className="mp-slip-total">
                 <span>Total stake</span>
                 <b>{slipTotal.toFixed(4)} zkLTC</b>
+              </div>
+              <div className="mp-slip-total">
+                <span>Potential return</span>
+                <b>{slipTotalReturn.toFixed(4)} zkLTC</b>
+              </div>
+              <div className="mp-slip-total profit-row">
+                <span>Potential profit</span>
+                <b className="profit-amount">+{slipTotalProfit.toFixed(4)} zkLTC</b>
               </div>
               <button className="mp-slip-submit" onClick={placeAll}>
                 {account ? `Place ${slipItems.length} bet${slipItems.length > 1 ? "s" : ""}` : "Connect wallet to place bets"}
@@ -824,20 +884,23 @@ export default function SimplePredict() {
   );
 }
 
-/* ─────────────── MARKET ROW ─────────────── */
-function MarketRow({ icon, tag, title, sub, live, leftLabel, leftPct, rightLabel, rightPct, disabled, selectedSide, onSelect }) {
+/* ─────────────── MARKET CARD ─────────────── */
+function MarketCard({ icon, tag, title, sub, live, leftLabel, leftPct, rightLabel, rightPct, disabled, selectedSide, onSelect }) {
   return (
-    <div className={`mp-row ${disabled ? "disabled" : ""}`}>
-      <div className="mp-row-icon">{icon}</div>
-      <div className="mp-row-main">
-        <div className="mp-row-tagline">
-          <span className="mp-row-tag">{tag}</span>
-          {live && <span className="mp-row-live">● Live</span>}
+    <div className={`mp-card ${disabled ? "disabled" : ""}`}>
+      <div className="mp-card-head">
+        <div className="mp-card-icon">{icon}</div>
+        <div className="mp-card-tagline">
+          <span className="mp-card-tag">{tag}</span>
+          {live && <span className="mp-card-live">● Live</span>}
         </div>
-        <p className="mp-row-title">{title}</p>
-        {sub && <p className="mp-row-sub">{sub}</p>}
       </div>
-      <div className="mp-row-pills">
+      <p className="mp-card-title">{title}</p>
+      {sub && <p className="mp-card-sub">{sub}</p>}
+      <div className="mp-card-bar">
+        <div className="mp-card-bar-fill" style={{ width: `${leftPct}%` }} />
+      </div>
+      <div className="mp-card-pills">
         <button
           className={`mp-pill pill-a ${selectedSide === "away" || selectedSide === "yes" ? "selected" : ""}`}
           disabled={disabled}
@@ -891,7 +954,13 @@ html, body, #root {
 .mp-toggle-knob{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--text);transition:transform .15s;}
 .mp-root[data-theme="light"] .mp-toggle-knob{transform:translateX(20px);}
 .mp-wallet-btn{background:var(--blue);color:#fff;border:none;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;}
-.mp-account{font-size:12px;color:var(--text-2);font-family:monospace;background:var(--bg-alt);padding:4px 10px;border-radius:6px;border:1px solid var(--border);}
+.mp-wallet-btn:disabled{opacity:.6;cursor:wait;}
+.mp-account-wrap{position:relative;}
+.mp-account{font-size:12px;color:var(--green);font-family:monospace;background:var(--bg-alt);padding:4px 10px;border-radius:6px;border:1px solid var(--border);cursor:pointer;}
+.mp-account:hover{border-color:var(--blue);}
+.mp-account-menu{position:absolute;top:calc(100% + 6px);right:0;background:var(--bg-alt);border:1px solid var(--border);border-radius:8px;padding:4px;box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:100;min-width:120px;}
+.mp-account-disconnect{width:100%;background:none;border:none;color:var(--red);font-size:12px;font-weight:600;padding:8px 10px;cursor:pointer;text-align:left;border-radius:6px;}
+.mp-account-disconnect:hover{background:var(--red-dim);}
 
 /* Category tabs */
 .mp-cats{display:flex;gap:8px;padding:16px 24px 0;}
@@ -915,20 +984,23 @@ html, body, #root {
 .mp-layout{display:grid;grid-template-columns:1fr 340px;gap:20px;padding:20px 24px 60px;max-width:1200px;margin:0 auto;align-items:start;}
 @media (max-width:900px){.mp-layout{grid-template-columns:1fr;}}
 
-/* Market rows */
-.mp-list{display:flex;flex-direction:column;gap:10px;}
-.mp-row{display:flex;align-items:center;gap:14px;background:var(--bg-alt);border:1px solid var(--border);border-radius:12px;padding:14px 16px;transition:background .15s;}
-.mp-row:hover{background:var(--bg-alt2);}
-.mp-row.disabled{opacity:.5;}
-.mp-row-icon{width:36px;height:36px;border-radius:50%;background:var(--bg-alt2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;overflow:hidden;}
-.mp-row-icon svg{width:28px;height:28px;}
-.mp-row-main{flex:1;min-width:0;}
-.mp-row-tagline{display:flex;align-items:center;gap:8px;margin-bottom:3px;}
-.mp-row-tag{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-3);}
-.mp-row-live{font-size:10px;font-weight:700;color:var(--green);}
-.mp-row-title{font-size:14px;font-weight:600;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.mp-row-sub{font-size:11px;color:var(--text-3);margin:2px 0 0;}
-.mp-row-pills{display:flex;gap:8px;flex-shrink:0;}
+/* Market cards (Polymarket-style grid) */
+.mp-list{display:grid;grid-template-columns:repeat(auto-fill, minmax(260px, 1fr));gap:14px;}
+.mp-card{display:flex;flex-direction:column;background:var(--bg-alt);border:1px solid var(--border);border-radius:14px;padding:16px;transition:transform .15s, border-color .15s;}
+.mp-card:hover{transform:translateY(-2px);border-color:var(--blue);}
+.mp-card.disabled{opacity:.5;}
+.mp-card.disabled:hover{transform:none;border-color:var(--border);}
+.mp-card-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+.mp-card-icon{width:32px;height:32px;border-radius:50%;background:var(--bg-alt2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;}
+.mp-card-icon svg{width:26px;height:26px;}
+.mp-card-tagline{display:flex;flex-direction:column;gap:2px;}
+.mp-card-tag{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-3);}
+.mp-card-live{font-size:10px;font-weight:700;color:var(--green);}
+.mp-card-title{font-size:14px;font-weight:600;margin:0 0 4px;line-height:1.35;min-height:38px;}
+.mp-card-sub{font-size:11px;color:var(--text-3);margin:0 0 12px;}
+.mp-card-bar{height:6px;border-radius:20px;background:var(--red);overflow:hidden;margin-bottom:12px;margin-top:auto;}
+.mp-card-bar-fill{height:100%;background:var(--green);}
+.mp-card-pills{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
 .mp-pill{border:1px solid var(--border);background:var(--bg-alt2);border-radius:20px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-2);white-space:nowrap;transition:all .15s;}
 .mp-pill b{margin-left:4px;}
 .mp-pill.pill-a{color:var(--green);}
@@ -957,8 +1029,14 @@ html, body, #root {
 .mp-slip-status.pending{color:var(--text-2);}
 .mp-slip-status.success{color:var(--green);}
 .mp-slip-status.error{color:var(--red);}
-.mp-slip-total{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text-2);margin:14px 0 10px;padding-top:12px;border-top:1px solid var(--border);}
+.mp-slip-total{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text-2);margin:8px 0;padding-top:8px;border-top:1px solid var(--border);}
+.mp-slip-total:first-of-type{margin-top:14px;}
 .mp-slip-total b{color:var(--text);font-size:14px;}
+.mp-slip-total.profit-row{margin-bottom:14px;}
+.mp-slip-total .profit-amount{color:var(--green);}
+.mp-slip-profit{font-size:11px;color:var(--text-3);margin:6px 0 0;}
+.mp-slip-profit b{color:var(--text-2);}
+.mp-slip-profit-gain{color:var(--green);font-weight:600;}
 .mp-slip-submit{width:100%;background:var(--blue);color:#fff;border:none;border-radius:10px;padding:12px 0;font-size:13px;font-weight:700;cursor:pointer;transition:opacity .15s;}
 .mp-slip-submit:hover{opacity:.9;}
 .mp-slip-submit:disabled{opacity:.5;cursor:not-allowed;}
