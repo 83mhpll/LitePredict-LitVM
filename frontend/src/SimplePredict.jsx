@@ -140,6 +140,76 @@ function sportMeta(title = "") {
   return { tag: "NFL", icon: <NFLLogo /> };
 }
 
+function getInitials(name = "") {
+  return name.split(" ").map(w => w[0]).join("").slice(0, 3).toUpperCase();
+}
+
+/* ─────────────── ESPN AUTO-FETCH (UFC) ───────────────
+   Pulls real, currently-scheduled UFC events from ESPN's public
+   scoreboard endpoint (no API key needed). Runs on load and every
+   hour after. Falls back to the hardcoded DEMO_SPORTS_GAMES UFC
+   entries above if the fetch fails or returns nothing usable —
+   so the app never shows a blank UFC section.
+*/
+const ESPN_UFC_API = "https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard";
+const ESPN_CACHE_KEY = "lp_ufc_espn_cache_v1";
+const ESPN_CACHE_TTL = 1000 * 60 * 60; // 1 hour
+
+function useESPNUFCEvents() {
+  const [events, setEvents] = useState(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem(ESPN_CACHE_KEY));
+      if (cached && Date.now() - cached.ts < ESPN_CACHE_TTL) return cached.data;
+    } catch {}
+    return null; // null = "haven't fetched yet", distinct from [] = "fetched, nothing found"
+  });
+  const [source, setSource] = useState("cache");
+
+  const fetchEvents = useCallback(async () => {
+    try {
+      const res = await fetch(`${ESPN_UFC_API}?limit=50`);
+      if (!res.ok) throw new Error(`ESPN responded ${res.status}`);
+      const data = await res.json();
+
+      const parsed = (data.events || []).map(ev => {
+        const comp = ev.competitions?.[0];
+        const competitors = comp?.competitors || [];
+        // ESPN MMA scoreboard lists each fighter as a separate "competitor" entry
+        const [a, b] = competitors;
+        if (!a || !b) return null;
+        const homeName = a?.athlete?.displayName || a?.team?.displayName || "TBA";
+        const awayName = b?.athlete?.displayName || b?.team?.displayName || "TBA";
+        const dateObj = new Date(ev.date);
+        return {
+          id: `ufc-espn-${ev.id}`,
+          tag: "UFC",
+          date: dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+          _sortTime: dateObj.getTime(),
+          home: { name: homeName, abbr: getInitials(homeName), prob: 50 },
+          away: { name: awayName, abbr: getInitials(awayName), prob: 50 },
+        };
+      }).filter(Boolean);
+
+      if (parsed.length > 0) {
+        localStorage.setItem(ESPN_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: parsed }));
+        setEvents(parsed);
+        setSource("live");
+      }
+    } catch (e) {
+      console.warn("ESPN UFC fetch failed, using fallback data", e);
+      setSource("fallback");
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchEvents();
+    const id = setInterval(fetchEvents, ESPN_CACHE_TTL);
+    return () => clearInterval(id);
+  }, [fetchEvents]);
+
+  return { events, source };
+}
+
 const SPORTS_BETS_KEY = "lp_sports_demo_bets";
 const CHAT_KEY = "lp_market_chat";
 
@@ -296,7 +366,7 @@ function useMarketChat(marketKey) {
 }
 
 /* ─────────────── MAIN COMPONENT ─────────────── */
-export default function SimplePredict({ onSwitchToClassic }) {
+export default function SimplePredict() {
   const [theme, setTheme] = useState("dark");
   const [category, setCategory] = useState("crypto");
   const [sportFilter, setSportFilter] = useState("All");
@@ -321,6 +391,7 @@ export default function SimplePredict({ onSwitchToClassic }) {
 
   const { bets: sportsDemoBets, placeBet: placeSportsDemoBet } = useSportsDemoBets();
   const onChainSports = useOnChainSportsMarkets();
+  const { events: espnUFCEvents, source: espnSource } = useESPNUFCEvents();
 
   useEffect(() => {
     const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
@@ -458,12 +529,22 @@ export default function SimplePredict({ onSwitchToClassic }) {
         return { ...m, ...meta, key: `sports-${m.marketId}`, kind: "sports-onchain" };
       });
     }
-    return DEMO_SPORTS_GAMES.map(g => {
+
+    // Non-UFC demo games stay hardcoded (NFL/Soccer/Boxing/ONE) — no free public
+    // API covers all of these consistently. UFC swaps in real ESPN data once loaded.
+    const nonUFC = DEMO_SPORTS_GAMES.filter(g => g.tag !== "UFC");
+    const ufcGames = (espnUFCEvents && espnUFCEvents.length > 0)
+      ? espnUFCEvents
+      : DEMO_SPORTS_GAMES.filter(g => g.tag === "UFC"); // fallback while ESPN loads / if it fails
+
+    const merged = [...ufcGames, ...nonUFC].sort((a, b) => (a._sortTime || 0) - (b._sortTime || 0));
+
+    return merged.map(g => {
       const meta = sportMeta(g.tag);
       const title = `${g.away.name} @ ${g.home.name}`;
       return { ...g, ...meta, title, key: `sports-demo-${g.id}`, kind: "sports-demo", leftLabel: g.away.name, rightLabel: g.home.name, leftPct: g.away.prob, rightPct: g.home.prob };
     });
-  }, [onChainSports.markets]);
+  }, [onChainSports.markets, espnUFCEvents]);
 
   const filteredSports = useMemo(() => {
     if (sportFilter === "All") return allSports;
@@ -495,9 +576,14 @@ export default function SimplePredict({ onSwitchToClassic }) {
 
       {/* ─── NAV ─── */}
       <div className="mp-nav">
-        <div className="mp-logo"><div className="mp-logo-mark">LP</div>LitePredict</div>
+        <button
+          className="mp-logo mp-logo-btn"
+          onClick={() => { setCategory("crypto"); setSportFilter("All"); }}
+          title="Home"
+        >
+          <div className="mp-logo-mark">LP</div>LitePredict
+        </button>
         <div className="mp-nav-right">
-          <button className="mp-link" onClick={onSwitchToClassic}>Classic view</button>
           <div className="mp-toggle" onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}>
             <div className="mp-toggle-knob" />
           </div>
@@ -529,6 +615,12 @@ export default function SimplePredict({ onSwitchToClassic }) {
       )}
 
       {toast && <div className="mp-toast">{toast}</div>}
+
+      {category === "sports" && !SPORTS_LIVE && (sportFilter === "All" || sportFilter === "UFC") && (
+        <p className="mp-espn-note">
+          UFC cards: {espnSource === "live" ? "🟢 live from ESPN, auto-refreshes hourly" : espnSource === "fallback" ? "🟡 showing recent fallback data — ESPN fetch failed" : "⏳ loading live schedule…"}
+        </p>
+      )}
 
       {/* ─── WALLET MODAL ─── */}
       {walletModalOpen && (
@@ -771,6 +863,8 @@ html, body, #root {
 /* Nav */
 .mp-nav{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid var(--border);}
 .mp-logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;}
+.mp-logo-btn{background:none;border:none;padding:0;cursor:pointer;color:var(--text);}
+.mp-logo-btn:hover{opacity:.85;}
 .mp-logo-mark{width:22px;height:22px;border-radius:6px;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;}
 .mp-nav-right{display:flex;align-items:center;gap:12px;}
 .mp-link{background:none;border:none;color:var(--text-2);font-size:13px;cursor:pointer;text-decoration:underline;}
@@ -796,6 +890,7 @@ html, body, #root {
 /* Demo banner */
 .mp-demo-banner{padding:10px 16px;background:var(--bg-alt);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--text-2);margin-bottom:12px;}
 .mp-note{font-size:12px;color:var(--text-3);}
+.mp-espn-note{font-size:11px;color:var(--text-3);padding:8px 24px 0;max-width:1200px;margin:0 auto;}
 
 /* Layout */
 .mp-layout{display:grid;grid-template-columns:1fr 340px;gap:20px;padding:20px 24px 60px;max-width:1200px;margin:0 auto;align-items:start;}
