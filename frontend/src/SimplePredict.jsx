@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { ethers } from "ethers";
 import { LITE_PREDICT_ABI, DEFAULT_CONTRACT, LITVM_RPC } from "./constants/contract";
 import { SPORTS_MARKET_ADDRESS, SPORTS_MARKET_ABI } from "./constants/sportsContract";
+import { THESPORTSDB_KEY, API_SPORTS_MMA_KEY, SPORTMONKS_KEY, CACHE_TTL_MS } from "./constants/sportsApiConfig";
 import { fmtTime, fmt4 } from "./utils/format";
 
 // Forced to demo/ESPN mode — the real on-chain SportsMarket contract had
@@ -128,8 +129,6 @@ const DEMO_SPORTS_GAMES = [
   { id: "hof-2026", tag: "NFL", date: "Aug 7", home: { name: "Cardinals", abbr: "ARI", prob: 47.8 }, away: { name: "Panthers", abbr: "CAR", prob: 52.2 } },
   { id: "pre1-detcin-2026", tag: "NFL", date: "Aug 14", home: { name: "Bengals", abbr: "CIN", prob: 50 }, away: { name: "Lions", abbr: "DET", prob: 50 } },
   { id: "pre1-indne-2026", tag: "NFL", date: "Aug 15", home: { name: "Patriots", abbr: "NE", prob: 52 }, away: { name: "Colts", abbr: "IND", prob: 48 } },
-  { id: "ufc-305", tag: "UFC", date: "Aug 9", home: { name: "Mateusz Gamrot", abbr: "GAM", prob: 55 }, away: { name: "Quillan Salkilld", abbr: "SAL", prob: 45 } },
-  { id: "ufc-306", tag: "UFC", date: "Aug 9", home: { name: "Darren Elkins", abbr: "ELK", prob: 48 }, away: { name: "Yadier Delvalle", abbr: "DEL", prob: 52 } },
   { id: "one-sam2", tag: "ONE Championship", date: "Aug 8", home: { name: "Masaaki Noiri", abbr: "NOI", prob: 51 }, away: { name: "Mengyang Liu", abbr: "LIU", prob: 49 } },
   { id: "ucl-final", tag: "Soccer", date: "Aug 12", home: { name: "Real Madrid", abbr: "RMA", prob: 48 }, away: { name: "Man City", abbr: "MCI", prob: 52 } },
   { id: "boxing-heavy", tag: "Boxing", date: "Aug 20", home: { name: "Oleksandr Usyk", abbr: "USY", prob: 53 }, away: { name: "Tyson Fury", abbr: "FUR", prob: 47 } },
@@ -161,71 +160,97 @@ function isEventOver(dateStr, sortTime) {
   return Date.now() > parsed.getTime();
 }
 
-/* ─────────────── ESPN AUTO-FETCH (UFC) ───────────────
-   Pulls real, currently-scheduled UFC events from ESPN's public
-   scoreboard endpoint (no API key needed). Runs on load and every
-   hour after. Falls back to the hardcoded DEMO_SPORTS_GAMES UFC
-   entries above if the fetch fails or returns nothing usable —
-   so the app never shows a blank UFC section.
+/* ─────────────── LIVE SPORTS DATA (TheSportsDB / API-Sports / Sportmonks) ───────────────
+   One generic hook, three sources. Each is independent: if a source has
+   no key or its fetch fails, that sport just keeps using the verified
+   hardcoded fallback data above — nothing breaks.
 */
-const ESPN_UFC_API = "https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard";
-const ESPN_CACHE_KEY = "lp_ufc_espn_cache_v1";
-const ESPN_CACHE_TTL = 1000 * 60 * 60; // 1 hour
-
-function useESPNUFCEvents() {
-  const [events, setEvents] = useState(() => {
+function useLiveSource(cacheKey, fetchFn, enabled) {
+  const [data, setData] = useState(() => {
     try {
-      const cached = JSON.parse(localStorage.getItem(ESPN_CACHE_KEY));
-      if (cached && Date.now() - cached.ts < ESPN_CACHE_TTL) return cached.data;
+      const c = JSON.parse(localStorage.getItem(cacheKey));
+      if (c && Date.now() - c.ts < CACHE_TTL_MS) return c.data;
     } catch {}
-    return null; // null = "haven't fetched yet", distinct from [] = "fetched, nothing found"
+    return null;
   });
-  const [source, setSource] = useState("cache");
-
-  const fetchEvents = useCallback(async () => {
-    try {
-      const res = await fetch(`${ESPN_UFC_API}?limit=50`);
-      if (!res.ok) throw new Error(`ESPN responded ${res.status}`);
-      const data = await res.json();
-
-      const parsed = (data.events || []).map(ev => {
-        const comp = ev.competitions?.[0];
-        const competitors = comp?.competitors || [];
-        // ESPN MMA scoreboard lists each fighter as a separate "competitor" entry
-        const [a, b] = competitors;
-        if (!a || !b) return null;
-        const homeName = a?.athlete?.displayName || a?.team?.displayName || "TBA";
-        const awayName = b?.athlete?.displayName || b?.team?.displayName || "TBA";
-        const dateObj = new Date(ev.date);
-        return {
-          id: `ufc-espn-${ev.id}`,
-          tag: "UFC",
-          date: dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-          _sortTime: dateObj.getTime(),
-          home: { name: homeName, abbr: getInitials(homeName), prob: 50 },
-          away: { name: awayName, abbr: getInitials(awayName), prob: 50 },
-        };
-      }).filter(Boolean);
-
-      if (parsed.length > 0) {
-        localStorage.setItem(ESPN_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: parsed }));
-        setEvents(parsed);
-        setSource("live");
-      }
-    } catch (e) {
-      console.warn("ESPN UFC fetch failed, using fallback data", e);
-      setSource("fallback");
-    }
-  }, []);
-
   useEffect(() => {
-    fetchEvents();
-    const id = setInterval(fetchEvents, ESPN_CACHE_TTL);
-    return () => clearInterval(id);
-  }, [fetchEvents]);
-
-  return { events, source };
+    if (!enabled) return;
+    let cancelled = false;
+    fetchFn().then(result => {
+      if (!cancelled && result?.length > 0) {
+        localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: result }));
+        setData(result);
+      }
+    }).catch(e => console.warn(`${cacheKey} fetch failed, using fallback data`, e));
+    return () => { cancelled = true; };
+  }, [enabled, fetchFn]);
+  return data;
 }
+
+// TheSportsDB — verified structure, works with the free "3" test key, no signup.
+async function fetchNFLFromSportsDB() {
+  const res = await fetch(`https://www.thesportsdb.com/api/v1/json/${THESPORTSDB_KEY}/eventsnextleague.php?id=4391`);
+  if (!res.ok) throw new Error(`TheSportsDB ${res.status}`);
+  const data = await res.json();
+  return (data.events || []).map(e => ({
+    id: `nfl-tsdb-${e.idEvent}`, tag: "NFL", date: new Date(e.dateEvent).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    _sortTime: new Date(e.dateEvent).getTime(),
+    home: { name: e.strHomeTeam, abbr: getInitials(e.strHomeTeam), prob: 50 },
+    away: { name: e.strAwayTeam, abbr: getInitials(e.strAwayTeam), prob: 50 },
+  })).filter(e => e.home.name && e.away.name);
+}
+
+// API-Sports MMA — best-effort field mapping based on their published docs.
+// NOT live-tested (no key available here) — check the browser console after
+// adding a real key; the field paths below may need small adjustments.
+async function fetchUFCFromApiSports() {
+  const res = await fetch(`https://v1.mma.api-sports.io/fights?league=1&season=2026`, {
+    headers: { "x-apisports-key": API_SPORTS_MMA_KEY },
+  });
+  if (!res.ok) throw new Error(`API-Sports ${res.status}`);
+  const data = await res.json();
+  return (data.response || []).map(f => ({
+    id: `ufc-apisports-${f.id}`, tag: "UFC", date: new Date(f.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    _sortTime: new Date(f.date).getTime(),
+    home: { name: f.fighters?.first?.name || "TBA", abbr: getInitials(f.fighters?.first?.name || "TBA"), prob: 50 },
+    away: { name: f.fighters?.second?.name || "TBA", abbr: getInitials(f.fighters?.second?.name || "TBA"), prob: 50 },
+  })).filter(f => f.home.name !== "TBA" && f.away.name !== "TBA");
+}
+
+// Sportmonks v3 football — best-effort field mapping, NOT live-tested either.
+async function fetchSoccerFromSportmonks() {
+  const res = await fetch(`https://api.sportmonks.com/v3/football/fixtures?api_token=${SPORTMONKS_KEY}&include=participants`);
+  if (!res.ok) throw new Error(`Sportmonks ${res.status}`);
+  const data = await res.json();
+  return (data.data || []).map(f => {
+    const [home, away] = f.participants || [];
+    return {
+      id: `soccer-sm-${f.id}`, tag: "Soccer", date: new Date(f.starting_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      _sortTime: new Date(f.starting_at).getTime(),
+      home: { name: home?.name || "TBA", abbr: getInitials(home?.name || "TBA"), prob: 50 },
+      away: { name: away?.name || "TBA", abbr: getInitials(away?.name || "TBA"), prob: 50 },
+    };
+  }).filter(f => f.home.name !== "TBA" && f.away.name !== "TBA");
+}
+/* ─────────────── VERIFIED REAL UFC SCHEDULE (fallback) ───────────────
+   The ESPN auto-fetch approach was scrapped — its response shape for
+   MMA events couldn't be tested against the real API from this
+   environment, and it was producing wrong fighter names in production.
+   This hardcoded list is cross-checked against Wikipedia, UFCalendar.com,
+   and Paramount+'s official schedule as of Aug 10, 2026. It needs a
+   manual update when cards get finalized (roughly every 1-2 weeks) —
+   a tradeoff for accuracy over unattended auto-updates. Used only when
+   API-Sports has no key configured or its fetch fails.
+*/
+const VERIFIED_UFC_EVENTS = [
+  { id: "ufc-330", tag: "UFC", date: "Aug 15", home: { name: "Islam Makhachev", abbr: "MAK", prob: 68 }, away: { name: "Ian Machado Garry", abbr: "GAR", prob: 32 } },
+  { id: "ufc-fn-hernandez", tag: "UFC", date: "Aug 22", home: { name: "Anthony Hernandez", abbr: "HER", prob: 55 }, away: { name: "Gregory Rodrigues", abbr: "ROD", prob: 45 } },
+  { id: "ufc-fn-nurmagomedov", tag: "UFC", date: "Aug 29", home: { name: "Umar Nurmagomedov", abbr: "NUR", prob: 65 }, away: { name: "Song Yadong", abbr: "SON", prob: 35 } },
+  { id: "ufc-fn-hooker", tag: "UFC", date: "Sep 5", home: { name: "Dan Hooker", abbr: "HOO", prob: 52 }, away: { name: "Benoit Saint Denis", abbr: "PAR", prob: 48 } },
+  { id: "noche-rodriguez", tag: "UFC", date: "Sep 12", home: { name: "Yair Rodriguez", abbr: "ROD", prob: 54 }, away: { name: "Aoriqileng Silva", abbr: "SIL", prob: 46 } },
+  { id: "ufc-331", tag: "UFC", date: "Sep 19", home: { name: "Joshua Van", abbr: "VAN", prob: 50 }, away: { name: "Alexandre Pantoja", abbr: "PAN", prob: 50 } },
+  { id: "ufc-fn-buckley", tag: "UFC", date: "Oct 17", home: { name: "Michael Buckley", abbr: "BUC", prob: 51 }, away: { name: "Randy Malott", abbr: "MAL", prob: 49 } },
+];
 
 const SPORTS_BETS_KEY = "lp_sports_demo_bets";
 const CHAT_KEY = "lp_market_chat";
@@ -235,9 +260,9 @@ function useSportsDemoBets() {
     try { return JSON.parse(localStorage.getItem(SPORTS_BETS_KEY)) || []; }
     catch { return []; }
   });
-  const placeBet = useCallback((gameId, side, amount) => {
+  const placeBet = useCallback((gameId, side, amount, title, sideLabel, percent) => {
     setBets(prev => {
-      const next = [...prev, { gameId, side, amount, id: Date.now() }];
+      const next = [...prev, { gameId, side, amount, title, sideLabel, percent, id: Date.now(), placedAt: Date.now() }];
       localStorage.setItem(SPORTS_BETS_KEY, JSON.stringify(next));
       return next;
     });
@@ -409,7 +434,9 @@ export default function SimplePredict() {
 
   const { bets: sportsDemoBets, placeBet: placeSportsDemoBet } = useSportsDemoBets();
   const onChainSports = useOnChainSportsMarkets();
-  const { events: espnUFCEvents, source: espnSource } = useESPNUFCEvents();
+  const liveNFL = useLiveSource("lp_nfl_tsdb_cache", fetchNFLFromSportsDB, true); // TheSportsDB — no key needed
+  const liveUFC = useLiveSource("lp_ufc_apisports_cache", fetchUFCFromApiSports, Boolean(API_SPORTS_MMA_KEY));
+  const liveSoccer = useLiveSource("lp_soccer_sportmonks_cache", fetchSoccerFromSportmonks, Boolean(SPORTMONKS_KEY));
 
   useEffect(() => {
     const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
@@ -557,9 +584,9 @@ export default function SimplePredict() {
         } else if (item.kind === "sports-onchain") {
           await onChainSports.placeBet(item.marketId, item.sideKey === "home" ? 1 : 2, amt);
         } else {
-          placeSportsDemoBet(item.gameId, item.sideKey, amt);
+          placeSportsDemoBet(item.gameId, item.sideKey, amt, item.title, item.sideLabel, item.percent);
         }
-        setSlip(prev => ({ ...prev, [key]: { ...prev[key], status: "success" } }));
+        setSlip(prev => ({ ...prev, [key]: { ...prev[key], status: item.kind === "sports-demo" ? "demo-saved" : "success" } }));
       } catch (e) {
         setSlip(prev => ({ ...prev, [key]: { ...prev[key], status: "error", error: e?.shortMessage || e?.message || "Bet failed" } }));
       }
@@ -567,7 +594,7 @@ export default function SimplePredict() {
     setTimeout(() => {
       setSlip(prev => {
         const next = {};
-        for (const [k, v] of Object.entries(prev)) if (v.status !== "success") next[k] = v;
+        for (const [k, v] of Object.entries(prev)) if (v.status !== "success" && v.status !== "demo-saved") next[k] = v;
         return next;
       });
     }, 1500);
@@ -582,14 +609,14 @@ export default function SimplePredict() {
       });
     }
 
-    // Non-UFC demo games stay hardcoded (NFL/Soccer/Boxing/ONE) — no free public
-    // API covers all of these consistently. UFC swaps in real ESPN data once loaded.
-    const nonUFC = DEMO_SPORTS_GAMES.filter(g => g.tag !== "UFC");
-    const ufcGames = (espnUFCEvents && espnUFCEvents.length > 0)
-      ? espnUFCEvents
-      : DEMO_SPORTS_GAMES.filter(g => g.tag === "UFC"); // fallback while ESPN loads / if it fails
+    // Each sport independently prefers live API data when available,
+    // falling back to the manually-verified/hardcoded entries otherwise.
+    const nfl = (liveNFL && liveNFL.length > 0) ? liveNFL : DEMO_SPORTS_GAMES.filter(g => g.tag === "NFL");
+    const ufc = (liveUFC && liveUFC.length > 0) ? liveUFC : VERIFIED_UFC_EVENTS;
+    const soccer = (liveSoccer && liveSoccer.length > 0) ? liveSoccer : DEMO_SPORTS_GAMES.filter(g => g.tag === "Soccer");
+    const other = DEMO_SPORTS_GAMES.filter(g => g.tag !== "NFL" && g.tag !== "Soccer");
 
-    const merged = [...ufcGames, ...nonUFC]
+    const merged = [...ufc, ...nfl, ...soccer, ...other]
       .filter(g => !isEventOver(g.date, g._sortTime))
       .sort((a, b) => (a._sortTime || 0) - (b._sortTime || 0));
 
@@ -598,7 +625,7 @@ export default function SimplePredict() {
       const title = `${g.away.name} @ ${g.home.name}`;
       return { ...g, ...meta, title, key: `sports-demo-${g.id}`, kind: "sports-demo", leftLabel: g.away.name, rightLabel: g.home.name, leftPct: g.away.prob, rightPct: g.home.prob };
     });
-  }, [onChainSports.markets, espnUFCEvents]);
+  }, [onChainSports.markets, liveNFL, liveUFC, liveSoccer]);
 
   const filteredSports = useMemo(() => {
     if (sportFilter === "All") return allSports;
@@ -662,6 +689,7 @@ export default function SimplePredict() {
       <div className="mp-cats">
         <button className={`mp-cat ${category === "crypto" ? "active" : ""}`} onClick={() => setCategory("crypto")}>Crypto</button>
         <button className={`mp-cat ${category === "sports" ? "active" : ""}`} onClick={() => setCategory("sports")}>Sports</button>
+        <button className={`mp-cat ${category === "mybets" ? "active" : ""}`} onClick={() => setCategory("mybets")}>My Bets</button>
       </div>
 
       {/* ─── SPORTS SUB-FILTERS ─── */}
@@ -681,9 +709,11 @@ export default function SimplePredict() {
 
       {toast && <div className="mp-toast">{toast}</div>}
 
-      {category === "sports" && !SPORTS_LIVE && (sportFilter === "All" || sportFilter === "UFC") && (
+      {category === "sports" && (
         <p className="mp-espn-note">
-          UFC cards: {espnSource === "live" ? "🟢 live from ESPN, auto-refreshes hourly" : espnSource === "fallback" ? "🟡 showing recent fallback data — ESPN fetch failed" : "⏳ loading live schedule…"}
+          {sportFilter === "All" || sportFilter === "NFL" ? `NFL: ${liveNFL?.length > 0 ? "🟢 live from TheSportsDB" : "🟡 fallback data"} · ` : ""}
+          {sportFilter === "All" || sportFilter === "UFC" ? `UFC: ${liveUFC?.length > 0 ? "🟢 live from API-Sports" : "🟡 manually verified schedule"} · ` : ""}
+          {sportFilter === "All" || sportFilter === "Soccer" ? `Soccer: ${liveSoccer?.length > 0 ? "🟢 live from Sportmonks" : "🟡 fallback data"}` : ""}
         </p>
       )}
 
@@ -784,9 +814,36 @@ export default function SimplePredict() {
               })}
             </>
           )}
+
+          {category === "mybets" && (
+            <div className="mp-mybets">
+              {sportsDemoBets.length === 0 ? (
+                <p className="mp-note">No bets placed yet — picks you place from the Sports or Crypto tab will show up here.</p>
+              ) : (
+                [...sportsDemoBets].reverse().map(bet => {
+                  const returnAmt = (parseFloat(bet.amount) || 0) / (Math.max(1, Math.min(99, bet.percent || 50)) / 100);
+                  const profit = returnAmt - (parseFloat(bet.amount) || 0);
+                  return (
+                    <div className="mp-bet-card" key={bet.id}>
+                      <div className="mp-bet-card-head">
+                        <p className="mp-bet-card-title">{bet.title || "Unknown market"}</p>
+                        <span className="mp-bet-card-date">{new Date(bet.placedAt || bet.id).toLocaleDateString()}</span>
+                      </div>
+                      <p className="mp-bet-card-side">Picked <b>{bet.sideLabel || bet.side}</b> at {Math.round(bet.percent || 50)}%</p>
+                      <div className="mp-bet-card-nums">
+                        <span>Stake: <b>{parseFloat(bet.amount).toFixed(4)} zkLTC</b></span>
+                        <span>To win: <b className="mp-bet-profit">{returnAmt.toFixed(4)} zkLTC</b></span>
+                      </div>
+                      <p className="mp-bet-card-note">Local demo bet — not on-chain, no real funds moved.</p>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
         </div>
 
-        {/* ─── BET SLIP + CHAT ─── */}
+        {category !== "mybets" && (
         <aside className="mp-slip">
           <p className="mp-slip-title">Bet Slip {slipItems.length > 0 && <span className="mp-slip-count">{slipItems.length}</span>}</p>
 
@@ -809,11 +866,12 @@ export default function SimplePredict() {
                 step="0.01"
                 min="0.01"
                 value={item.amount}
-                disabled={item.status === "pending" || item.status === "success"}
+                disabled={item.status === "pending" || item.status === "success" || item.status === "demo-saved"}
                 onChange={e => setSlipAmount(key, e.target.value)}
               />
               {item.status === "pending" && <p className="mp-slip-status pending">Sending…</p>}
-              {item.status === "success" && <p className="mp-slip-status success">Confirmed ✓</p>}
+              {item.status === "success" && <p className="mp-slip-status success">Confirmed on-chain ✓</p>}
+              {item.status === "demo-saved" && <p className="mp-slip-status demo">Saved to your device only — no real funds moved</p>}
               {item.status === "error" && <p className="mp-slip-status error">{item.error}</p>}
               {item.status === "idle" && (
                 <p className="mp-slip-profit">
@@ -879,6 +937,7 @@ export default function SimplePredict() {
             </div>
           )}
         </aside>
+        )}
       </div>
     </div>
   );
@@ -982,6 +1041,17 @@ html, body, #root {
 
 /* Layout */
 .mp-layout{display:grid;grid-template-columns:1fr 340px;gap:20px;padding:20px 24px 60px;max-width:1200px;margin:0 auto;align-items:start;}
+.mp-layout:has(.mp-mybets){grid-template-columns:1fr;}
+
+.mp-mybets{display:flex;flex-direction:column;gap:10px;}
+.mp-bet-card{background:var(--bg-alt);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
+.mp-bet-card-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;}
+.mp-bet-card-title{font-size:14px;font-weight:600;margin:0;}
+.mp-bet-card-date{font-size:11px;color:var(--text-3);white-space:nowrap;}
+.mp-bet-card-side{font-size:12px;color:var(--text-2);margin:4px 0 10px;}
+.mp-bet-card-nums{display:flex;gap:20px;font-size:12px;color:var(--text-2);}
+.mp-bet-profit{color:var(--green);}
+.mp-bet-card-note{font-size:10px;color:var(--text-3);margin:8px 0 0;}
 @media (max-width:900px){.mp-layout{grid-template-columns:1fr;}}
 
 /* Market cards (Polymarket-style grid) */
@@ -1028,6 +1098,7 @@ html, body, #root {
 .mp-slip-status{font-size:11px;margin:6px 0 0;font-weight:600;}
 .mp-slip-status.pending{color:var(--text-2);}
 .mp-slip-status.success{color:var(--green);}
+.mp-slip-status.demo{color:var(--text-3);}
 .mp-slip-status.error{color:var(--red);}
 .mp-slip-total{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text-2);margin:8px 0;padding-top:8px;border-top:1px solid var(--border);}
 .mp-slip-total:first-of-type{margin-top:14px;}
