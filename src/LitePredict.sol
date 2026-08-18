@@ -251,11 +251,18 @@ contract LitePredict {
         emit Paused(msg.sender, currentEpoch);
     }
 
+    /// @notice Lift an emergency pause. Deliberately does NOT touch
+    /// genesisStartOnce/genesisLockOnce -- those are a permanent one-time
+    /// gate on the genesis bootstrap functions, not something tied to the
+    /// pause state. Previously this reset both flags to false, which meant
+    /// pausing/unpausing AFTER genesis had already completed (i.e. during
+    /// normal live operation) let genesisStartRound() run a second time --
+    /// silently overwriting round 1's timestamps while leaving its old
+    /// bet/settlement data untouched. Unpausing now simply lets
+    /// executeRound()/betting resume exactly where currentEpoch left off.
     function unpause() external onlyAdmin {
         require(paused, "LP: not paused");
         paused = false;
-        genesisStartOnce = false;
-        genesisLockOnce  = false;
         emit Unpaused(msg.sender, currentEpoch);
     }
 
