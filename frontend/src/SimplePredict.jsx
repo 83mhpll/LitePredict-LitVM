@@ -662,7 +662,7 @@ export default function SimplePredict() {
           onClick={() => { setCategory("crypto"); setSportFilter("All"); }}
           title="Home"
         >
-          <div className="mp-logo-mark">LP</div>LitePredict
+          <img src="/logo.png" alt="LitePredict" className="mp-logo-mark" style={{width: 28, height: 28, borderRadius: 6, objectFit: "cover"}} />LitePredict
         </button>
         <div className="mp-nav-right">
           <div className="mp-toggle" onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}>

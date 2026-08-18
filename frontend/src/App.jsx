@@ -1167,7 +1167,7 @@ export default function App() {
 
       {/* ═══ TOPBAR ═══ */}
       <header className="topbar">
-        <div className="topbar-brand"><div className="brand-logo" style={{background: '#3b82f6', color: 'white', padding: '2px 6px', borderRadius: 4}}>LP</div><span className="brand-name">LitePredict v2.0</span></div>
+        <div className="topbar-brand"><img src="/logo.png" alt="LitePredict" className="brand-logo" style={{width: 24, height: 24, borderRadius: 4, objectFit: "cover"}} /><span className="brand-name">LitePredict v2.0</span></div>
         <div className="topbar-divider" />
 
         <div style={{display: 'flex', alignItems: 'center', gap: 6, fontSize: 12}}>
